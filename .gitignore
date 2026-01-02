@@ -1,0 +1,5 @@
+# Ignore trained model weights
+models/
+*.pt
+*.pth
+*.ckpt
