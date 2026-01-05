@@ -176,61 +176,57 @@ class LSHIndexer:
         entries: List[Dict[str, any]]
     ) -> Dict[str, int]:
         """
-        Add multiple hashes efficiently.
+        Add multiple hashes in batch.
         
         Args:
-            entries: List of dictionaries with keys:
+            entries: List of dicts with keys:
                 - binary_hash: np.ndarray
                 - tenant_id: str
                 - hash_id: str
                 
         Returns:
             Dictionary with statistics:
-                - total: Total entries
-                - success: Successfully added
-                - failed: Failed entries
+                - successful: Number of successful additions
+                - failed: Number of failed additions
+                - total: Total entries processed
                 
         Example:
             >>> entries = [
             ...     {
-            ...         "binary_hash": hash1,
-            ...         "tenant_id": "tenant_1",
-            ...         "hash_id": "hash_001"
+            ...         'binary_hash': hash1,
+            ...         'tenant_id': 'tenant1',
+            ...         'hash_id': 'hash_001'
             ...     },
-            ...     {
-            ...         "binary_hash": hash2,
-            ...         "tenant_id": "tenant_1",
-            ...         "hash_id": "hash_002"
-            ...     }
+            ...     ...
             ... ]
             >>> stats = indexer.add_batch(entries)
+            >>> print(f"Added {stats['successful']}/{stats['total']}")
         """
-        total = len(entries)
-        success = 0
+        successful = 0
         failed = 0
         
         for entry in entries:
-            result = self.add(
+            success = self.add(
                 binary_hash=entry['binary_hash'],
                 tenant_id=entry['tenant_id'],
                 hash_id=entry['hash_id']
             )
             
-            if result:
-                success += 1
+            if success:
+                successful += 1
             else:
                 failed += 1
         
         logger.info(
-            f"Batch add complete: {success}/{total} successful, {failed} failed"
+            f"Batch add completed: {successful} successful, {failed} failed"
         )
         
         return {
-            'total': total,
-            'success': success,
-            'failed': failed
+            'successful': successful,
+            'failed': failed,
+            'total': len(entries)
         }
-    
+
     def query(
         self,
         binary_hash: np.ndarray,

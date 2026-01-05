@@ -1,7 +1,7 @@
 """
 Security Utilities
 ==================
-Cryptographic utilities for secure key management and operations.
+Cryptographic utilities with HSM integration for secure key management.
 """
 
 import os
@@ -72,6 +72,43 @@ class SecurityUtils:
         return key_bytes
     
     @staticmethod
+    def load_key_from_hsm(
+        key_label: str = "LSH_HMAC_MASTER_KEY",
+        auto_initialize: bool = True
+    ) -> bytes:
+        """
+        Load HMAC key from SoftHSM.
+        
+        Args:
+            key_label: Label of key in HSM
+            auto_initialize: If True, generate and store key if not exists
+            
+        Returns:
+            32-byte HMAC key
+            
+        Raises:
+            ValueError: If key not found and auto_initialize=False
+            RuntimeError: If HSM is not available
+        """
+        try:
+            from .hsm_key_manager import load_hmac_key_from_hsm, initialize_hmac_key_in_hsm
+            
+            try:
+                # Try to load existing key
+                return load_hmac_key_from_hsm(key_label)
+            except ValueError:
+                if auto_initialize:
+                    logger.info("Key not found in HSM, initializing...")
+                    return initialize_hmac_key_in_hsm()
+                else:
+                    raise
+                    
+        except ImportError:
+            raise RuntimeError(
+                "HSM modules not available. Install python-pkcs11 and configure SoftHSM."
+            )
+    
+    @staticmethod
     def validate_key(key: bytes) -> None:
         """
         Validate HMAC key format.
@@ -102,51 +139,5 @@ class SecurityUtils:
             
         Returns:
             True if equal, False otherwise
-            
-        Security:
-            Uses hmac.compare_digest for constant-time comparison
         """
         return hmac.compare_digest(a, b)
-    
-    @staticmethod
-    def secure_zero(data: bytearray) -> None:
-        """
-        Securely zero out sensitive data in memory.
-        
-        Args:
-            data: Bytearray to zero out
-            
-        Note:
-            Best-effort memory clearing. Python's GC may still leave copies.
-        """
-        if isinstance(data, bytearray):
-            for i in range(len(data)):
-                data[i] = 0
-    
-    @staticmethod
-    def derive_key(master_key: bytes, context: bytes, length: int = 32) -> bytes:
-        """
-        Derive sub-key from master key using HKDF-like construction.
-        
-        Args:
-            master_key: Master key
-            context: Context information for key derivation
-            length: Output length in bytes
-            
-        Returns:
-            Derived key
-            
-        Security:
-            Uses HMAC-SHA3-256 for key derivation
-        """
-        h = hashlib.sha3_256()
-        h.update(master_key)
-        h.update(context)
-        derived = h.digest()
-        
-        if length > len(derived):
-            # Extend if needed
-            additional = hashlib.sha3_256(derived + master_key).digest()
-            derived = derived + additional
-        
-        return derived[:length]
