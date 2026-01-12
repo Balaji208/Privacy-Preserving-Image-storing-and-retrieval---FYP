@@ -3,4 +3,4 @@ models/
 *.pt
 *.pth
 *.ckpt
-test_storage_pipeline.py
+test_azure_pipeline.py
