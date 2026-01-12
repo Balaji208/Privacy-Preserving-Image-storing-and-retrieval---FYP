@@ -12,8 +12,6 @@ import logging
 import numpy as np
 import hashlib
 import base64
-from dotenv import load_dotenv
-import os
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,15 +22,7 @@ print("\n" + "=" * 70)
 print("Azure Storage Pipeline - SHA(FHE_CT + ImageID salt) Test")
 print("=" * 70)
 
-load_dotenv()
-# Set Azure connection string
-
-# Read the connection string
-conn_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-
-if not conn_str:
-    raise RuntimeError("AZURE_STORAGE_CONNECTION_STRING not set")
-
+# deleted this line since it contains connection string
 try:
     from storage_pipeline import SecureImagePipeline, AzureStorageConfig
     print("✓ Pipeline imported successfully")
