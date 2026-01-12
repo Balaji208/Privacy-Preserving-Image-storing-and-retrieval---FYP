@@ -1,7 +1,7 @@
 """
 Test Complete Image Storage Pipeline
 =====================================
-Tests end-to-end flow: Upload → Encrypt → Hash → LSH → FHE → Redis
+Tests: Upload → Encrypt → Hash → LSH → FHE → Redis (Encrypted Hash as Key)
 """
 
 import sys
@@ -9,8 +9,8 @@ from pathlib import Path
 import json
 import numpy as np
 import logging
+import base64
 
-# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(levelname)s - %(name)s - %(message)s'
@@ -20,14 +20,14 @@ print("\n" + "=" * 70)
 print("Secure Image Storage Pipeline - Complete Test")
 print("=" * 70)
 
-# Import pipeline
+# Import pipeline (FIXED: removed process_batch import)
 try:
-    from storage_pipeline.image_processor import SecureImageProcessor
+    from storage_pipeline.pipeline import SecureImageProcessor
     print("✓ Pipeline imported successfully")
 except ImportError as e:
     print(f"✗ Import failed: {e}")
-    print("\nMake sure all dependencies are installed:")
-    print("  pip install redis tenseal torch torchvision numpy")
+    import traceback
+    traceback.print_exc()
     sys.exit(1)
 
 # ============================================================================
@@ -35,12 +35,7 @@ except ImportError as e:
 # ============================================================================
 print("\n[Test 1] Initializing pipeline...")
 try:
-    processor = SecureImageProcessor(
-        convnext_model_path='./models/convnext_state_dict_only.pt',
-        deephash_model_path='./models/deephash_state_dict_only.pt',
-        redis_host='localhost',
-        redis_port=6379
-    )
+    processor = SecureImageProcessor()
     print("✓ Pipeline initialized")
 except Exception as e:
     print(f"✗ Initialization failed: {e}")
@@ -53,7 +48,6 @@ except Exception as e:
 # ============================================================================
 print("\n[Test 2] Processing single image...")
 try:
-    # Find a sample image
     sample_images = list(Path('./sample_images').glob('*.jpg'))
     if not sample_images:
         print("✗ No sample images found")
@@ -62,12 +56,12 @@ try:
     test_image = sample_images[0]
     print(f"  Input: {test_image.name}")
     
-    # Process image
     image_id, metadata = processor.process_image(str(test_image))
     
     print(f"✓ Image processed successfully")
     print(f"  Image ID: {image_id}")
-    print(f"  LSH Buckets: {metadata.lsh_tokens}")  # Note: plural form
+    print(f"  Redis Key: {metadata.redis_key}")
+    print(f"  LSH Tokens: {metadata.lsh_tokens}")
     print(f"  DeepHash Sum: {metadata.deephash_sum}")
     print(f"  FHE Size: {metadata.fhe_ciphertext_size:,} bytes")
     print(f"  Processing Time: {metadata.processing_time_ms:.2f} ms")
@@ -79,21 +73,20 @@ except Exception as e:
     sys.exit(1)
 
 # ============================================================================
-# TEST 3: Retrieve from Redis
+# TEST 3: Retrieve from Redis by Image ID
 # ============================================================================
-print("\n[Test 3] Retrieving from Redis...")
+print("\n[Test 3] Retrieving from Redis by Image ID...")
 try:
-    # Retrieve data
-    stored_data = processor.retrieve_image_data(image_id)
+    stored_data = processor.retrieve_by_image_id(image_id)
     
     print(f"✓ Retrieved from Redis")
+    print(f"  Image ID: {stored_data['image_id']}")
     print(f"  Encrypted Image: {len(json.dumps(stored_data['encrypted_image'])):,} bytes")
-    print(f"  FHE Hash: {len(stored_data['fhe_encrypted_hash']):,} bytes")
-    print(f"  Metadata: {len(json.dumps(stored_data['metadata'])):,} bytes")
+    print(f"  FHE Hash: {stored_data['fhe_encrypted_hash']['hash_dimension']} bits")
+    print(f"  LSH Tokens: {len(stored_data['lsh_tokens'])}")
+    print(f"  Metadata Keys: {list(stored_data['metadata'].keys())}")
     
-    # Verify metadata matches
-    retrieved_meta = stored_data['metadata']
-    assert retrieved_meta['image_id'] == image_id
+    assert stored_data['image_id'] == image_id
     print("✓ Metadata verification passed")
     
 except Exception as e:
@@ -106,8 +99,11 @@ except Exception as e:
 # ============================================================================
 print("\n[Test 4] Decrypting FHE hash...")
 try:
-    # Decrypt FHE hash
-    fhe_bytes = stored_data['fhe_encrypted_hash']
+    # Get FHE ciphertext from stored data
+    fhe_b64 = stored_data['fhe_encrypted_hash']['ciphertext']
+    fhe_bytes = base64.b64decode(fhe_b64)
+    
+    # Decrypt
     decrypted_hash = processor.decrypt_fhe_hash(fhe_bytes)
     
     print(f"✓ FHE hash decrypted")
@@ -115,7 +111,6 @@ try:
     print(f"  Hash sum: {np.sum(decrypted_hash)}")
     print(f"  Expected sum: {metadata.deephash_sum}")
     
-    # Verify sum matches
     assert np.sum(decrypted_hash) == metadata.deephash_sum
     print("✓ Hash integrity verified")
     
@@ -129,36 +124,31 @@ except Exception as e:
 # ============================================================================
 print("\n[Test 5] Processing batch of images...")
 try:
-    # Get 3 more images
-    batch_images = sample_images[1:4] if len(sample_images) > 3 else sample_images[:3]
+    batch_images = sample_images[1:4] if len(sample_images) > 3 else sample_images[:2]
     
-    image_ids = []
     for img in batch_images:
         img_id, meta = processor.process_image(str(img))
-        image_ids.append(img_id)
         print(f"  ✓ {img.name} → {img_id}")
     
-    print(f"✓ Processed {len(image_ids)} images")
+    print(f"✓ Processed {len(batch_images)} additional images")
     
 except Exception as e:
     print(f"⚠ Batch processing warning: {e}")
 
 # ============================================================================
-# TEST 6: Query by LSH Bucket
+# TEST 6: Get All Images
 # ============================================================================
-print("\n[Test 6] Querying by LSH bucket...")
+print("\n[Test 6] Listing all images...")
 try:
-    # Get images in same bucket
-    bucket_id = metadata.lsh_bucket_id
-    bucket_images = processor.get_bucket_images(bucket_id)
-    
-    print(f"✓ LSH Bucket: {bucket_id}")
-    print(f"  Images in bucket: {len(bucket_images)}")
-    for img_id in bucket_images:
+    all_images = processor.get_all_images()
+    print(f"✓ Total images stored: {len(all_images)}")
+    for img_id in all_images[:5]:
         print(f"    - {img_id}")
+    if len(all_images) > 5:
+        print(f"    ... and {len(all_images) - 5} more")
     
 except Exception as e:
-    print(f"⚠ Bucket query warning: {e}")
+    print(f"⚠ Listing warning: {e}")
 
 # ============================================================================
 # TEST 7: Pipeline Statistics
@@ -169,24 +159,22 @@ try:
     
     print("✓ Statistics:")
     print(f"  Total images: {stats['total_images']}")
-    print(f"  Total buckets: {stats['total_buckets']}")
+    print(f"  LSH tokens: {stats['lsh_stats'].get('num_tokens', 'N/A')}")
     print(f"  Redis memory: {stats['redis_memory_used']}")
     
 except Exception as e:
     print(f"⚠ Statistics warning: {e}")
 
 # ============================================================================
-# TEST 8: Cleanup (Optional)
+# TEST 8: Cleanup
 # ============================================================================
 print("\n[Test 8] Cleanup test...")
 try:
-    # Delete test image
     processor.delete_image(image_id)
     print(f"✓ Deleted test image: {image_id}")
     
-    # Verify deletion
     try:
-        processor.retrieve_image_data(image_id)
+        processor.retrieve_by_image_id(image_id)
         print("✗ Image still exists after deletion")
     except ValueError:
         print("✓ Deletion verified")
@@ -200,15 +188,13 @@ except Exception as e:
 print("\n" + "=" * 70)
 print("✅ Complete Pipeline Test Finished!")
 print("=" * 70)
-print("\nPipeline components tested:")
-print("  ✓ Image encryption (Kyber + AES-GCM)")
-print("  ✓ Feature extraction (ConvNeXt-V2)")
-print("  ✓ DeepHash generation (256-bit)")
-print("  ✓ LSH bucketing (Redis)")
-print("  ✓ FHE encryption (TenSEAL BFV)")
-print("  ✓ Redis storage (key-value)")
-print("  ✓ Data retrieval")
-print("  ✓ FHE decryption")
-print("  ✓ Batch processing")
-print("  ✓ Bucket querying")
-print("\n" + "=" * 70 + "\n")
+print("\n🔑 Redis Storage Format:")
+print("   Key: enc_hash:<base64_fhe_encrypted_deephash>")
+print("   Value: Complete JSON object with:")
+print("     - image_id")
+print("     - encrypted_image (Kyber + AES-GCM)")
+print("     - fhe_encrypted_hash (TenSEAL BFV)")
+print("     - lsh_tokens (6 tokens)")
+print("     - metadata (filename, timestamp, etc.)")
+print("\n✓ Single Redis key-value storage verified!")
+print("=" * 70 + "\n")

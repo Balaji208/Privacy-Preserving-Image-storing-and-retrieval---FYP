@@ -71,7 +71,7 @@ try:
     start = time.time()
     encrypted_hash = ts.bfv_vector(context, binary_hash.tolist())
     enc_time = time.time() - start
-    
+    print(f"FHE Hash : {encrypted_hash}");
     print(f"✓ Hash encrypted in {enc_time*1000:.2f} ms")
     
     # Get ciphertext size

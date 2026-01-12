@@ -1,21 +1,20 @@
 """
 Secure Image Storage Pipeline
 ==============================
-Complete pipeline for encrypted medical image storage and retrieval.
+Main module exports
 """
 
-from .image_processor import (
-    SecureImageProcessor,
-    ImageMetadata,
-    process_single_image,
-    process_batch
-)
+from .pipeline import SecureImagePipeline
+from .models.metadata import ImageMetadata, ProcessingResult
+from .config.azure_config import AzureStorageConfig
+from .storage.azure_table_store import AzureTableKVStore
 
 __all__ = [
-    'SecureImageProcessor',
+    'SecureImagePipeline',
     'ImageMetadata',
-    'process_single_image',
-    'process_batch'
+    'ProcessingResult',
+    'AzureStorageConfig',
+    'AzureTableKVStore'
 ]
 
-__version__ = '1.0.0'
+__version__ = '2.0.0'
