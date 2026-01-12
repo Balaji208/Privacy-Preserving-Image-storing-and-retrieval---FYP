@@ -4,3 +4,4 @@ models/
 *.pth
 *.ckpt
 test_azure_pipeline.py 
+.env
