@@ -22,7 +22,7 @@ print("\n" + "=" * 70)
 print("Azure Storage Pipeline - SHA(FHE_CT + ImageID salt) Test")
 print("=" * 70)
 
-# deleted this line since it contains connection string
+# connection string init
 try:
     from storage_pipeline import SecureImagePipeline, AzureStorageConfig
     print("✓ Pipeline imported successfully")
