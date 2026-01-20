@@ -1,7 +1,0 @@
-# Ignore trained model weights
-models/
-*.pt
-*.pth
-*.ckpt
-test_azure_pipeline.py 
-.env
