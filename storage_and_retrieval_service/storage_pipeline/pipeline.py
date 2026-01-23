@@ -1,13 +1,12 @@
 """
 Secure Image Storage Pipeline
 ==============================
-
 Complete pipeline with Redis LSH + Azure Blob Storage + Optional Table Metadata
 
-Flow:
+Flow (Updated for v4.0):
 1. Image → Image Encryption (Kyber + AES-GCM)
-2. Image → Feature Extraction (ConvNeXt)
-3. Features → DeepHash (256-bit)
+2. Image → Feature Extraction (ConvNeXt-V2, 512D)
+3. Features → DeepHash v4.0 (512D → 256-bit, direct mode, no PCA)
 4. DeepHash → FHE Encryption (~432KB)
 5. DeepHash → LSH Indexing → Redis (bucket_token → [fhe_ct_token])
 6. FHE CT + encryption_json → Azure Blob (with FHE_CT embedded)
@@ -36,21 +35,23 @@ logger = logging.getLogger(__name__)
 
 class SecureImagePipeline:
     """
-    Complete secure image storage pipeline.
+    Complete secure image storage pipeline with DeepHash v4.0.
     
-    Redis Schema:
+    Storage Schema:
+    ---------------
+    Redis LSH:
         Key: HMAC(tenant_id:table_idx:bucket_id)
-        Value: [HMAC(FHE_CT1 || image_id1), HMAC(FHE_CT2 || image_id2), ...]
+        Value: [HMAC(FHE_CT1 || image_id1), ...]
     
-    Azure Blob Schema:
+    Azure Blob:
         Blob Name: HMAC(FHE_CT || image_id).json
         Content: {
             ...encryption_json fields,
-            "fhe_ciphertext": "base64_encoded",  ← STORED HERE!
+            "fhe_ciphertext": "base64_encoded",
             "fhe_ciphertext_size": 432154
         }
     
-    Azure Table Schema (Optional):
+    Azure Table (Optional):
         PartitionKey: HMAC(FHE_CT || image_id)[:4]
         RowKey: HMAC(FHE_CT || image_id)
         blob_name: Reference to blob
@@ -60,31 +61,62 @@ class SecureImagePipeline:
     def __init__(
         self,
         azure_config: AzureStorageConfig,
-        convnext_model_path: str = './models/convnext_state_dict_only.pt',
-        deephash_model_path: str = './models/deephash_state_dict_only.pt',
+        convnext_model_path: str = './models/convnext_v2_best_phase1.pt',
+        deephash_model_path: str = './models/deephash_v4_statedict.pt',
         redis_host: str = 'localhost',
         redis_port: int = 6379,
         redis_db: int = 0,
         tenant_id: str = 'default_tenant',
         disable_redis: bool = False,
-        use_table_metadata: bool = False  # Optional Table Storage
+        use_table_metadata: bool = False,
+        device: str = 'cuda'
     ):
-        """Initialize all pipeline components."""
-        logger.info("="*70)
-        logger.info("Initializing Secure Image Storage Pipeline")
-        logger.info("="*70)
+        """
+        Initialize pipeline with v4.0 models.
+        
+        Args:
+            azure_config: Azure storage configuration
+            convnext_model_path: Path to ConvNeXt v2 model
+            deephash_model_path: Path to DeepHash v4.0 model
+            redis_host: Redis host
+            redis_port: Redis port
+            redis_db: Redis database
+            tenant_id: Tenant identifier
+            disable_redis: Disable Redis LSH indexing
+            use_table_metadata: Enable Azure Table metadata storage
+            device: Device for ML models ('cuda' or 'cpu')
+        """
+        logger.info("=" * 70)
+        logger.info("Initializing Secure Image Storage Pipeline (v4.0)")
+        logger.info("=" * 70)
         
         self.tenant_id = tenant_id
         self.disable_redis = disable_redis
         self.use_table_metadata = use_table_metadata
+        self.device = device
         
         # Initialize processors
         logger.info("\n[1/7] Initializing processors...")
+        
         self.encryption_processor = EncryptionProcessor()
-        self.feature_processor = FeatureProcessor(convnext_model_path)
-        self.hash_processor = HashProcessor(deephash_model_path)
+        
+        self.feature_processor = FeatureProcessor(
+            model_path=convnext_model_path,
+            device=device
+        )
+        
+        self.hash_processor = HashProcessor(
+            model_path=deephash_model_path,
+            device=device
+        )
+        
         self.fhe_processor = FHEProcessor()
+        
         logger.info("✅ All processors initialized")
+        logger.info("  - Image Encryption: Kyber-1024 + AES-256-GCM")
+        logger.info("  - Feature Extraction: ConvNeXt-V2 (512D)")
+        logger.info("  - Deep Hashing: v4.0 Direct Mode (512D → 256-bit, no PCA)")
+        logger.info("  - FHE: BFV scheme (~432KB ciphertexts)")
         
         # Load HMAC key from HSM
         logger.info("\n[2/7] Loading HMAC key from HSM...")
@@ -156,9 +188,9 @@ class SecureImagePipeline:
         else:
             logger.info("\n[5/7] Redis disabled (skip LSH)")
         
-        logger.info("\n" + "="*70)
-        logger.info("✅ PIPELINE INITIALIZED SUCCESSFULLY")
-        logger.info("="*70 + "\n")
+        logger.info("\n" + "=" * 70)
+        logger.info("✅ PIPELINE INITIALIZED SUCCESSFULLY (v4.0)")
+        logger.info("=" * 70 + "\n")
     
     def process_image(
         self,
@@ -181,10 +213,10 @@ class SecureImagePipeline:
         if image_id is None:
             image_id = self._generate_image_id(image_path)
         
-        logger.info(f"\n{'='*70}")
+        logger.info(f"\n{'=' * 70}")
         logger.info(f"Processing: {image_path.name}")
         logger.info(f"Image ID: {image_id}")
-        logger.info(f"{'='*70}")
+        logger.info(f"{'=' * 70}")
         
         image_size = image_path.stat().st_size
         image_sha256 = self._compute_sha256(image_path)
@@ -197,17 +229,20 @@ class SecureImagePipeline:
         logger.info(f"  ✅ Encrypted: {len(json.dumps(encryption_json)):,} bytes")
         
         # Stage 2: Feature Extraction
-        logger.info("\n[2/6] Extracting features (ConvNeXt)...")
+        logger.info("\n[2/6] Extracting features (ConvNeXt-V2)...")
         features = self.feature_processor.extract(str(image_path))
-        logger.info(f"  ✅ Features: {features.shape}")
+        logger.info(f"  ✅ Features: {features.shape} (512D)")
         
-        # Stage 3: DeepHash Generation
-        logger.info("\n[3/6] Generating DeepHash...")
+        # Stage 3: DeepHash Generation (v4.0 direct mode)
+        logger.info("\n[3/6] Generating DeepHash (v4.0 direct mode)...")
         binary_hash = self.hash_processor.generate(features)
+        
         if binary_hash.ndim > 1:
             binary_hash = binary_hash.squeeze()
+        
         deephash_sum = int(np.sum(binary_hash))
         logger.info(f"  ✅ DeepHash: {binary_hash.shape}, ones={deephash_sum}/256")
+        logger.info(f"  Mode: Direct (512D → 256-bit, no PCA)")
         
         # Stage 4: FHE Encryption
         logger.info("\n[4/6] FHE encrypting DeepHash...")
@@ -219,7 +254,6 @@ class SecureImagePipeline:
         if not self.disable_redis:
             try:
                 logger.info("\n[5/6] LSH indexing (Redis)...")
-                
                 success = self.lsh_indexer.add_fhe_ct(
                     binary_hash=binary_hash,
                     tenant_id=self.tenant_id,
@@ -232,7 +266,7 @@ class SecureImagePipeline:
                     logger.info(f"  ✅ LSH indexed: {lsh_bucket_count} buckets")
                 else:
                     logger.warning("  ⚠️ LSH indexing failed")
-                    
+            
             except Exception as e:
                 logger.warning(f"  ⚠️ LSH indexing error: {e}")
         else:
@@ -241,19 +275,17 @@ class SecureImagePipeline:
         # Stage 6: Azure Blob Storage (with FHE_CT embedded)
         logger.info("\n[6/6] Storing in Azure Blob...")
         blob_name = self.azure_blob_store.put(
-            fhe_ciphertext=fhe_bytes,  # For HMAC key generation
-            image_id=image_id,         # For HMAC salt
-            encryption_json=encryption_json  # ✅ FHE_CT will be added inside put()
+            fhe_ciphertext=fhe_bytes,
+            image_id=image_id,
+            encryption_json=encryption_json
         )
         logger.info(f"  ✅ Stored in Azure Blob")
-        logger.info(f"     Blob Name: {blob_name[:32]}...")
+        logger.info(f"  Blob Name: {blob_name[:32]}...")
         
         # Optional: Store metadata in Table Storage
         if self.use_table_metadata and self.azure_table_store:
             try:
-                # Get blob size (approximate)
                 blob_size = len(json.dumps(encryption_json)) + len(fhe_bytes)
-                
                 self.azure_table_store.put(
                     fhe_ciphertext=fhe_bytes,
                     image_id=image_id,
@@ -267,9 +299,9 @@ class SecureImagePipeline:
         # Create metadata
         processing_time = (time.time() - start_time) * 1000
         
-        logger.info(f"\n{'='*70}")
+        logger.info(f"\n{'=' * 70}")
         logger.info(f"✅ PROCESSING COMPLETE: {processing_time:.2f} ms")
-        logger.info(f"{'='*70}\n")
+        logger.info(f"{'=' * 70}\n")
         
         metadata = ImageMetadata(
             image_id=image_id,
@@ -282,36 +314,24 @@ class SecureImagePipeline:
             lsh_tokens=[],
             fhe_ciphertext_size=len(fhe_bytes),
             processing_time_ms=processing_time,
-            azure_partition_key=blob_name[:4],  # First 4 chars of HMAC
-            azure_row_key=blob_name  # Full blob name
+            azure_partition_key=blob_name[:4],
+            azure_row_key=blob_name
         )
         
         return image_id, metadata
     
     def retrieve_and_decrypt(
-        self, 
-        fhe_ciphertext: bytes, 
+        self,
+        fhe_ciphertext: bytes,
         image_id: str
     ) -> Optional[Dict]:
-        """
-        Retrieve encrypted image data by FHE ciphertext + image_id.
-        
-        Returns:
-            Dict with:
-                'fhe_ciphertext': bytes (from blob)
-                'encryption_json': dict (original encryption data)
-                'image_id': str
-                'decrypted_hash': np.ndarray (decrypted DeepHash)
-                'blob_name': str
-        """
+        """Retrieve encrypted image data by FHE ciphertext + image_id."""
         data = self.azure_blob_store.get(fhe_ciphertext, image_id)
+        
         if not data:
             return None
         
-        # FHE CT is already extracted from blob
         retrieved_fhe_ct = data['fhe_ciphertext']
-        
-        # Decrypt FHE hash
         decrypted_hash = self.fhe_processor.decrypt(retrieved_fhe_ct)
         
         return {
@@ -323,16 +343,10 @@ class SecureImagePipeline:
         }
     
     def retrieve_by_image_id(self, image_id: str) -> Optional[Dict]:
-        """
-        Retrieve by image_id.
-        
-        Uses Table Storage if enabled (fast), otherwise blob scan (slow).
-        """
-        # Try Table Storage first (if enabled)
+        """Retrieve by image_id (uses Table Storage if enabled)."""
         if self.use_table_metadata and self.azure_table_store:
             metadata = self.azure_table_store.get_by_image_id(image_id)
             if metadata:
-                # Get blob by name
                 data = self.azure_blob_store.get_by_blob_name(metadata['blob_name'])
                 if data:
                     return {
@@ -342,7 +356,6 @@ class SecureImagePipeline:
                         'blob_name': data['blob_name']
                     }
         
-        # Fallback: Blob scan
         data = self.azure_blob_store.get_by_image_id(image_id)
         if not data:
             return None
@@ -357,6 +370,7 @@ class SecureImagePipeline:
     def retrieve_by_blob_name(self, blob_name: str) -> Optional[Dict]:
         """Retrieve by blob name (HMAC token)."""
         data = self.azure_blob_store.get_by_blob_name(blob_name)
+        
         if not data:
             return None
         
@@ -384,9 +398,15 @@ class SecureImagePipeline:
         """Get pipeline statistics."""
         stats = {
             'tenant_id': self.tenant_id,
+            'pipeline_version': '4.0',
             'total_blobs': self.azure_blob_store.count_blobs(),
             'disable_redis': self.disable_redis,
-            'use_table_metadata': self.use_table_metadata
+            'use_table_metadata': self.use_table_metadata,
+            'feature_extractor': 'ConvNeXt-V2 (512D)',
+            'hash_model': 'DeepHash v4.0 (direct mode, no PCA)',
+            'hash_architecture': '512D → [1024, 512] → 256-bit',
+            'similarity_threshold': '66 bits',
+            'device': self.device
         }
         
         if not self.disable_redis and hasattr(self, 'lsh_indexer'):

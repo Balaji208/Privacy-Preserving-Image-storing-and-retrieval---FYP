@@ -33,16 +33,19 @@ from pkcs11 import Attribute
 import os
 import base64
 
+
 def print_header(title: str):
     """Print formatted section header."""
     print("\n" + "=" * 70)
     print(title.center(70))
     print("=" * 70)
 
+
 def print_step(step_num: int, title: str):
     """Print step header."""
     print(f"\n[{step_num}] {title}")
     print("-" * 70)
+
 
 def clear_all_hsm_keys():
     """Clear all existing keys from HSM."""
@@ -66,6 +69,7 @@ def clear_all_hsm_keys():
     else:
         print("   ℹ No existing keys found")
 
+
 def generate_kyber_keypair():
     """Generate system-wide Kyber-768 keypair for image encryption."""
     print_step(2, "Generating Kyber-768 Keypair (PQC Image Encryption)")
@@ -78,6 +82,7 @@ def generate_kyber_keypair():
     print(f"   Purpose: Post-quantum secure image encryption")
 
     return keys
+
 
 def store_kyber_keys(keys: dict):
     """Store Kyber keys in HSM and filesystem."""
@@ -100,6 +105,7 @@ def store_kyber_keys(keys: dict):
     print(f"   ✓ Saved to: {pub_key_path}")
     print(f"   ✓ Size: {len(keys['public_key'])} bytes")
 
+
 def generate_lsh_hmac_key():
     """Generate LSH HMAC key for similarity search."""
     print_step(4, "Generating LSH HMAC Key (Similarity Search)")
@@ -115,9 +121,10 @@ def generate_lsh_hmac_key():
     print(f"   ✓ Preview: {lsh_key[:8].hex()}...")
     print(f"   Purpose: Secure LSH token generation")
 
+
 def generate_tenseal_bfv_keys():
-    """Generate BFV keys using TenSEAL (NO Pyfhel dependency)."""
-    print_step(5, "Generating BFV Keys with TenSEAL")
+    """Generate BFV keys using TenSEAL with relinearization keys."""
+    print_step(5, "Generating BFV Keys with TenSEAL (+ Relin Keys)")
 
     try:
         import tenseal as ts
@@ -130,7 +137,7 @@ def generate_tenseal_bfv_keys():
 
     # BFV parameters (128-bit security)
     poly_modulus_degree = 8192
-    plain_modulus = 1032193  # Prime for batching
+    plain_modulus = 65537  # Changed to 65537 for better compatibility
 
     print(f"   Polynomial degree: {poly_modulus_degree}")
     print(f"   Plaintext modulus: {plain_modulus}")
@@ -145,20 +152,27 @@ def generate_tenseal_bfv_keys():
 
     print("   [5.2] Generating cryptographic keys...")
 
+    # ✅ CRITICAL: Generate relinearization keys
+    # These are needed for ciphertext multiplication operations
+    context.generate_relin_keys()
+    print("   ✓ Relinearization keys: Generated")
+
     # Generate Galois keys (for rotations/Hamming distance)
     context.generate_galois_keys()
+    print("   ✓ Galois keys: Generated")
 
     print("   ✓ Key generation complete")
     print("   ✓ Public key: Generated")
     print("   ✓ Secret key: Generated")
-    print("   ✓ Galois keys: Generated")
+    print("   ✓ Galois keys: Generated (rotations)")
+    print("   ✓ Relinearization keys: Generated (multiplication)")
 
     # Serialize full context (with secret key)
     context_full = context.serialize(
         save_public_key=True,
         save_secret_key=True,
         save_galois_keys=True,
-        save_relin_keys=False  # Not used in our implementation
+        save_relin_keys=True  # ✅ Include relin keys
     )
 
     # Create public-only context (for client-side encryption)
@@ -168,12 +182,12 @@ def generate_tenseal_bfv_keys():
         save_public_key=True,
         save_secret_key=False,  # No secret key
         save_galois_keys=True,
-        save_relin_keys=False
+        save_relin_keys=True  # ✅ Include relin keys in public context
     )
 
     print(f"   ✓ Full context: {len(context_full):,} bytes (with secret key)")
     print(f"   ✓ Public context: {len(context_public_bytes):,} bytes (no secret)")
-    print(f"   Purpose: Encrypted similarity search operations")
+    print(f"   Purpose: Encrypted similarity search with multiplication support")
 
     return {
         'full_context': context_full,
@@ -181,9 +195,12 @@ def generate_tenseal_bfv_keys():
         'params': {
             'poly_modulus_degree': poly_modulus_degree,
             'plain_modulus': plain_modulus,
-            'security_level': 128
+            'security_level': 128,
+            'has_relin_keys': True,
+            'has_galois_keys': True
         }
     }
+
 
 def store_tenseal_context(tenseal_keys: dict):
     """Store TenSEAL context in HSM."""
@@ -200,7 +217,8 @@ def store_tenseal_context(tenseal_keys: dict):
 
     print(f"   ✓ Stored: {len(tenseal_keys['full_context']):,} bytes")
     print(f"   ✓ Label: TENSEAL_BFV_CONTEXT")
-    print(f"   ✓ Contains: Public + Secret + Galois keys")
+    print(f"   ✓ Contains: Public + Secret + Galois + Relin keys")
+
 
 def store_public_context_file(tenseal_keys: dict):
     """Store public context as .bin file for client-side encryption."""
@@ -227,8 +245,9 @@ def store_public_context_file(tenseal_keys: dict):
 
     print(f"   ✓ Saved to: {public_context_file}")
     print(f"   ✓ File size: {file_size:,} bytes (~{file_size // 1024} KB)")
-    print(f"   ✓ Contains: Public key + Galois keys (no secret key)")
+    print(f"   ✓ Contains: Public key + Galois keys + Relin keys (no secret)")
     print(f"   ✓ Safe to deploy on untrusted servers")
+    print(f"   ✓ Supports: Encryption, rotation, multiplication operations")
 
     # Also save parameters as JSON
     import json
@@ -237,6 +256,7 @@ def store_public_context_file(tenseal_keys: dict):
         json.dump(tenseal_keys['params'], f, indent=2)
 
     print(f"   ✓ Saved parameters: {params_file}")
+
 
 def verify_all_keys():
     """Verify all keys are stored correctly."""
@@ -286,6 +306,13 @@ def verify_all_keys():
     try:
         context_bytes = hsm.retrieve_secret("TENSEAL_BFV_CONTEXT")
         print(f"   ✓ TENSEAL_BFV_CONTEXT: {len(context_bytes):,} bytes")
+        
+        # ✅ Verify it can be loaded and has required keys
+        import tenseal as ts
+        ctx = ts.context_from(context_bytes)
+        print(f"   ✓ Context loadable: Yes")
+        print(f"   ✓ Is public: {ctx.is_public()}")
+        
         verification_results.append(("TenSEAL Context (HSM)", True, len(context_bytes)))
     except Exception as e:
         print(f"   ✗ FAILED: {e}")
@@ -296,13 +323,25 @@ def verify_all_keys():
     public_context_file = project_root / "bfv_keys" / "bfv_context_public.bin"
     if public_context_file.exists():
         file_size = public_context_file.stat().st_size
-        print(f"   ✓ Public context file: {file_size:,} bytes")
-        verification_results.append(("TenSEAL Public Context (File)", True, f"{file_size:,} bytes"))
+        
+        # ✅ Verify it can be loaded
+        try:
+            import tenseal as ts
+            with open(public_context_file, 'rb') as f:
+                ctx = ts.context_from(f.read())
+            print(f"   ✓ Public context file: {file_size:,} bytes")
+            print(f"   ✓ Loadable: Yes")
+            print(f"   ✓ Is public: {ctx.is_public()}")
+            verification_results.append(("TenSEAL Public Context (File)", True, f"{file_size:,} bytes"))
+        except Exception as e:
+            print(f"   ✗ File corrupt: {e}")
+            verification_results.append(("TenSEAL Public Context (File)", False, str(e)))
     else:
         print(f"   ✗ File not found: {public_context_file}")
         verification_results.append(("TenSEAL Public Context (File)", False, "Not found"))
 
     return verification_results
+
 
 def display_final_inventory():
     """Display complete HSM key inventory."""
@@ -310,6 +349,7 @@ def display_final_inventory():
 
     hsm = get_hsm_manager()
     hsm.list_all_keys()
+
 
 def print_summary(verification_results: list):
     """Print final summary."""
@@ -340,11 +380,16 @@ def print_summary(verification_results: list):
         print("   • Post-quantum secure image encryption (Kyber)")
         print("   • Secure similarity search (LSH HMAC)")
         print("   • Encrypted similarity search (TenSEAL BFV)")
+        print("   • FHE multiplication operations (Relin keys)")
         print("\n🔑 Key Storage Summary:")
         print("   • Kyber secret key → HSM")
         print("   • LSH HMAC key → HSM")
         print("   • TenSEAL full context (with secret) → HSM")
         print("   • TenSEAL public context → bfv_keys/bfv_context_public.bin")
+        print("\n✨ New Features:")
+        print("   • Relinearization keys included (supports multiplication)")
+        print("   • Galois keys included (supports rotations)")
+        print("   • Public context safe for untrusted servers")
         print(f"\n{'=' * 70}\n")
         return True
     else:
@@ -352,6 +397,7 @@ def print_summary(verification_results: list):
         print("\nPlease review errors above and re-run if needed.")
         print(f"{'=' * 70}\n")
         return False
+
 
 def main():
     """Main initialization workflow."""
@@ -363,7 +409,7 @@ def main():
     print("   • LSH HMAC key (similarity search)")
     print("   • Old BFV/Pyfhel keys (if any)")
     print("   • TenSEAL BFV context")
-    print("\n ✨ New: Stores public context as .bin file (no .env limit)")
+    print("\n ✨ New: Includes relinearization keys for FHE multiplication")
     print("\n Press Ctrl+C to cancel, or Enter to continue...")
 
     try:
@@ -383,10 +429,10 @@ def main():
         # Step 4: LSH HMAC key
         generate_lsh_hmac_key()
 
-        # Step 5-7: TenSEAL BFV keys
+        # Step 5-7: TenSEAL BFV keys (with relin keys)
         tenseal_keys = generate_tenseal_bfv_keys()
         store_tenseal_context(tenseal_keys)
-        store_public_context_file(tenseal_keys)  # Changed: saves to .bin file
+        store_public_context_file(tenseal_keys)
 
         # Step 8: Verify
         verification_results = verify_all_keys()
@@ -404,6 +450,7 @@ def main():
         import traceback
         traceback.print_exc()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

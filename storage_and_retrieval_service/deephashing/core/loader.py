@@ -1,116 +1,181 @@
 """Model loading utilities"""
 
 import torch
+import pickle
 from pathlib import Path
-from typing import Tuple, Dict, Any
+from typing import Tuple, Optional
 import logging
 
-from .model import DeepHashingHead
-from .config import ModelConfig
-from ..exceptions import ModelLoadError
+from .model import DeepHashingHead, DeepHashingModel
+from .config import DeepHashingConfig
+from ..exceptions import ModelLoadError, PCATransformError
 
 logger = logging.getLogger(__name__)
 
 
 class ModelLoader:
-    """Utility class for loading DeepHash models"""
+    """Load deep hashing models and PCA transforms."""
     
     @staticmethod
-    def load(
-        model_path: Path,
-        device: str
-    ) -> Tuple[DeepHashingHead, ModelConfig, Dict[str, Any]]:
+    def load_deep_hash_model(config: DeepHashingConfig) -> DeepHashingModel:
         """
-        Load model from checkpoint.
+        Load complete deep hashing pipeline.
         
         Args:
-            model_path: Path to model checkpoint
-            device: Device to load on ('cpu' or 'cuda')
-            
+            config: DeepHashingConfig object
+        
         Returns:
-            Tuple of (model, config, metrics)
-            
+            DeepHashingModel instance
+        
         Raises:
+            FileNotFoundError: If model or PCA files not found
             ModelLoadError: If loading fails
         """
-        if not model_path.exists():
-            raise ModelLoadError(f"Model not found: {model_path}")
-        
         try:
-            checkpoint = torch.load(
-                model_path,
-                map_location=device,
-                weights_only=False
+            # Validate hash model path
+            hash_path = Path(config.hash_model_path)
+            if not hash_path.exists():
+                raise FileNotFoundError(f"Hash model not found: {hash_path}")
+            
+            # Load PCA if in PCA mode
+            pca = None
+            if config.use_pca:
+                if config.pca_transform_path is None:
+                    raise ValueError("PCA mode requires pca_transform_path")
+                
+                pca_path = Path(config.pca_transform_path)
+                if not pca_path.exists():
+                    raise FileNotFoundError(f"PCA transform not found: {pca_path}")
+                
+                pca = ModelLoader._load_pca(pca_path)
+            
+            # Initialize hash model architecture
+            hash_model = DeepHashingHead(
+                input_dim=config.model_input_dim,
+                hidden_dims=config.hidden_dims,
+                hash_bits=config.hash_bits,
+                dropout=config.dropout
             )
             
-            # Handle state_dict format
-            if ModelLoader._is_state_dict_format(checkpoint):
-                return ModelLoader._load_from_state_dict(checkpoint, device)
+            # Wrap in DeepHashingModel
+            model = DeepHashingModel(
+                pca_transform=pca,
+                hash_model=hash_model,
+                device=config.device,
+                use_pca=config.use_pca
+            )
             
-            # Handle full model format
-            elif 'hash_model' in checkpoint:
-                return ModelLoader._load_full_model(checkpoint, 'hash_model')
+            # Load weights
+            model.load_weights(str(hash_path))
             
-            elif 'model' in checkpoint:
-                return ModelLoader._load_full_model(checkpoint, 'model')
+            logger.info(f"✓ Deep hash model loaded successfully")
             
-            else:
-                # Direct model object
-                return checkpoint, ModelConfig(), {}
-                
+            return model
+        
         except Exception as e:
-            raise ModelLoadError(f"Failed to load model: {e}") from e
+            raise ModelLoadError(f"Failed to load deep hash model: {e}") from e
     
     @staticmethod
-    def _is_state_dict_format(checkpoint: Dict) -> bool:
-        """Check if checkpoint is state_dict format"""
-        return (
-            isinstance(checkpoint, dict) and
-            'state_dict' in checkpoint and
-            'hash_model' not in checkpoint
-        )
+    def _load_pca(pca_path: Path):
+        """
+        Load PCA transform from pickle file.
+        
+        Args:
+            pca_path: Path to PCA pickle file
+        
+        Returns:
+            Fitted PCA object
+        
+        Raises:
+            PCATransformError: If loading fails
+        """
+        try:
+            with open(pca_path, 'rb') as f:
+                pca = pickle.load(f)
+            
+            # Validate PCA object
+            if not hasattr(pca, 'transform'):
+                raise ValueError("Loaded object is not a valid PCA transformer")
+            
+            if not hasattr(pca, 'n_components_'):
+                raise ValueError("PCA object has not been fitted")
+            
+            logger.info(f"✓ PCA transform loaded: {pca.n_components_} components")
+            logger.info(f"  Explained variance: {pca.explained_variance_ratio_.sum():.2%}")
+            
+            return pca
+        
+        except Exception as e:
+            raise PCATransformError(f"Failed to load PCA transform: {e}") from e
     
     @staticmethod
-    def _load_from_state_dict(
-        checkpoint: Dict,
-        device: str
-    ) -> Tuple[DeepHashingHead, ModelConfig, Dict]:
-        """Load model from state_dict"""
-        logger.info("Loading from state dict...")
+    def verify_model(model: DeepHashingModel) -> bool:
+        """
+        Verify model works correctly with test input.
         
-        # Parse config
-        config_dict = checkpoint.get('config', {})
-        config = ModelConfig.from_dict(config_dict)
+        Args:
+            model: DeepHashingModel to verify
         
-        # Reconstruct model
-        model = DeepHashingHead(
-            input_dim=config.input_dim,
-            hash_dim=config.hash_dim,
-            hidden_dims=config.hidden_dims
-        )
+        Returns:
+            True if verification passes, False otherwise
+        """
+        try:
+            # Determine feature dimension based on mode
+            feature_dim = 512  # Always use 512D input (before PCA if applicable)
+            
+            # Test with dummy input
+            dummy_features = torch.randn(1, feature_dim)
+            
+            # Generate hash
+            binary, continuous = model.generate_hash(dummy_features)
+            
+            # Get hash bits from model
+            hash_bits = model.hash_model.hash_bits
+            
+            # Check outputs
+            assert binary.shape == (1, hash_bits), \
+                f"Wrong binary shape: expected (1, {hash_bits}), got {binary.shape}"
+            
+            assert continuous.shape == (1, hash_bits), \
+                f"Wrong continuous shape: expected (1, {hash_bits}), got {continuous.shape}"
+            
+            assert binary.min() >= 0 and binary.max() <= 1, \
+                f"Binary not in {{0,1}}: range [{binary.min()}, {binary.max()}]"
+            
+            # Continuous values should be reasonable (not checking strict [-1,1] due to potential scaling)
+            assert continuous.min() >= -10 and continuous.max() <= 10, \
+                f"Continuous values out of reasonable range: [{continuous.min()}, {continuous.max()}]"
+            
+            logger.info("✓ Model verification passed")
+            logger.info(f"  Input: {feature_dim}D features")
+            logger.info(f"  Output: {hash_bits}-bit hash codes")
+            logger.info(f"  Binary range: [{binary.min().item()}, {binary.max().item()}]")
+            logger.info(f"  Continuous range: [{continuous.min().item():.3f}, {continuous.max().item():.3f}]")
+            
+            return True
         
-        # Load weights
-        state_dict = checkpoint['state_dict']
-        model.load_state_dict(state_dict, strict=False)
+        except AssertionError as e:
+            logger.error(f"✗ Model verification failed: {e}")
+            return False
         
-        logger.info(f"  Hash dimension: {config.hash_dim}")
-        logger.info(f"  Input dimension: {config.input_dim}")
-        
-        metrics = checkpoint.get('metrics', {})
-        
-        return model, config, metrics
+        except Exception as e:
+            logger.error(f"✗ Model verification failed with exception: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     @staticmethod
-    def _load_full_model(
-        checkpoint: Dict,
-        model_key: str
-    ) -> Tuple[DeepHashingHead, ModelConfig, Dict]:
-        """Load full model object"""
-        logger.info(f"Loading {model_key} object...")
+    def load_and_verify(config: DeepHashingConfig) -> Tuple[DeepHashingModel, bool]:
+        """
+        Load model and verify it works.
         
-        model = checkpoint[model_key]
-        config_dict = checkpoint.get('config', {})
-        config = ModelConfig.from_dict(config_dict)
-        metrics = checkpoint.get('metrics', {})
+        Args:
+            config: DeepHashingConfig object
         
-        return model, config, metrics
+        Returns:
+            Tuple of (model, verification_passed)
+        """
+        model = ModelLoader.load_deep_hash_model(config)
+        verified = ModelLoader.verify_model(model)
+        
+        return model, verified

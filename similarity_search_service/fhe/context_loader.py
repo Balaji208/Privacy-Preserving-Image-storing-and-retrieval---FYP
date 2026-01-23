@@ -1,99 +1,65 @@
-"""
-FHE Context Loader with Server-Side Keys
-=========================================
-"""
-
-import logging
-import base64
 import tenseal as ts
-from typing import Optional
+from pathlib import Path
+from utils.logger import get_logger
 
-from config.settings import Settings
+logger = get_logger(__name__)
 
-logger = logging.getLogger(__name__)
-
-
-class FHEContextLoader:
-    """
-    FHE context manager with server-side Galois & Relin keys.
-    
-    Keys are loaded once at startup from base64 environment variable.
-    """
+class BFVContextLoader:
+    """Load and manage BFV context for FHE operations."""
     
     _instance = None
     _context = None
-    _galois_keys_loaded = False
-    _relin_keys_loaded = False
     
-    def __new__(cls, settings: Settings):
+    def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
     
-    def __init__(self, settings: Settings):
-        if self._context is not None:
-            return  # Already initialized
+    def load_context(self, context_path: str) -> ts.Context:
+        """Load BFV context from file (singleton pattern)."""
         
-        self.settings = settings
-        logger.info("🔑 Initializing FHE context with server-side keys...")
-    
-    def load_context(self) -> ts.Context:
-        """
-        Load FHE context with Galois & Relin keys from base64.
-        
-        Returns:
-            TenSEAL context with evaluation keys loaded
-        """
         if self._context is not None:
+            logger.debug("Using cached BFV context")
             return self._context
         
+        path = Path(context_path)
+        
+        if not path.exists():
+            raise FileNotFoundError(f"BFV context not found: {context_path}")
+        
+        logger.info(f"Loading BFV context from {context_path}")
+        
+        with open(path, 'rb') as f:
+            context_bytes = f.read()
+        
+        self._context = ts.context_from(context_bytes)
+        
+        # Log context info (use correct TenSEAL attribute names)
         try:
-            if not self.settings.tenseal_full_context_base64:
-                raise ValueError("TENSEAL_FULL_CONTEXT_BASE64 not set in .env")
-            
-            logger.info("Loading full context from base64...")
-            
-            # Decode base64 and deserialize context
-            context_bytes = base64.b64decode(
-                self.settings.tenseal_full_context_base64
-            )
-            
-            self._context = ts.context_from(context_bytes)
-            
-            # Make context public (remove secret key if present)
-            if not self._context.is_public():
-                self._context.make_context_public()
-            
-            # Full context includes Galois and Relin keys
-            self._galois_keys_loaded = True
-            self._relin_keys_loaded = True
-            
             logger.info(
-                f"✅ FHE Context loaded successfully\n"
-                f"   - Scheme: BFV\n"
-                f"   - Poly modulus degree: {self.settings.fhe_poly_modulus_degree}\n"
-                f"   - Plain modulus: {self.settings.fhe_plain_modulus}\n"
-                f"   - Galois keys: ✓\n"
-                f"   - Relin keys: ✓\n"
-                f"   - Public context: ✓"
+                f"BFV context loaded successfully - "
+                f"Is public: {self._context.is_public()}"
             )
             
-            return self._context
+            # Try to get additional info if available
+            if hasattr(self._context, 'global_scale'):
+                logger.info(f"Global scale: {self._context.global_scale}")
             
         except Exception as e:
-            logger.error(f"❌ Context loading failed: {e}")
-            raise
-    
-    def get_context(self) -> ts.Context:
-        """Get loaded context."""
-        if self._context is None:
-            raise RuntimeError("Context not loaded. Call load_context() first.")
+            logger.warning(f"Could not retrieve full context info: {e}")
+            logger.info("BFV context loaded successfully")
+        
+        if not self._context.is_public():
+            logger.warning("⚠️  Context contains secret key - should be public only!")
+        else:
+            logger.info("✅ Context is public-only (no secret key)")
+        
         return self._context
     
-    def has_galois_keys(self) -> bool:
-        """Check if Galois keys are loaded."""
-        return self._galois_keys_loaded
-    
-    def has_relin_keys(self) -> bool:
-        """Check if Relinearization keys are loaded."""
-        return self._relin_keys_loaded
+    def get_context(self) -> ts.Context:
+        """Get loaded context (must call load_context first)."""
+        
+        if self._context is None:
+            raise RuntimeError("Context not loaded. Call load_context() first.")
+        
+        return self._context

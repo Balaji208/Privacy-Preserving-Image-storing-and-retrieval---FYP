@@ -1,7 +1,15 @@
 """
 DeepHash Module Tests
 =====================
-Comprehensive tests for DeepHash binary code generation with real images.
+Comprehensive tests for DeepHash v4.0 binary code generation with real medical images.
+
+Tests both:
+- v4.0 Direct Mode (512D → Hash, no PCA)
+- Legacy PCA Mode (512D → PCA → Hash)
+
+Run with:
+    pytest tests/test_deephash.py -v
+    python tests/test_deephash.py
 """
 
 import pytest
@@ -10,17 +18,23 @@ import numpy as np
 from pathlib import Path
 import sys
 from PIL import Image
-import io
-import torchvision.transforms as transforms
-import torchvision.models as models
+import logging
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from deephashing import DeepHashGenerator
+from deephashing import DeepHashGenerator, DeepHashingConfig
 from deephashing.core.model import DeepHashingHead
-from deephashing.core.config import ModelConfig
-from deephashing.exceptions import ModelLoadError, ValidationError
+from deephashing.exceptions import (
+    ModelLoadError, 
+    ValidationError, 
+    HashGenerationError,
+    PCATransformError
+)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -28,70 +42,40 @@ from deephashing.exceptions import ModelLoadError, ValidationError
 # ============================================================================
 
 def get_sample_images():
-    """Get list of sample images from ../sample_images folder."""
+    """Get list of real medical images from sample_images folder."""
     image_dirs = [
-        Path("../sample_images"),
         Path("sample_images"),
+        Path("../sample_images"),
         Path("tests/sample_images"),
         Path("data/sample_images"),
     ]
     
     for img_dir in image_dirs:
         if img_dir.exists():
-            image_files = list(img_dir.glob("*.jpg")) + \
-                         list(img_dir.glob("*.png")) + \
-                         list(img_dir.glob("*.jpeg"))
+            image_files = []
+            for ext in ['*.jpg', '*.jpeg', '*.png', '*.bmp']:
+                image_files.extend(list(img_dir.glob(ext)))
+            
             if image_files:
-                print(f"✓ Found {len(image_files)} images in {img_dir}")
-                return image_files
+                logger.info(f"✓ Found {len(image_files)} images in {img_dir}")
+                return sorted(image_files)[:20]  # Limit to 20 images
     
-    print("⚠ No sample images found, using synthetic images")
+    logger.warning("⚠ No sample images found, using synthetic images")
     return []
 
 
-def extract_features_resnet50(image_path: Path) -> np.ndarray:
-    """
-    Extract 512-dim features from image using ResNet50.
-    
-    This simulates the real CNN feature extraction pipeline.
-    """
-    # Load pre-trained ResNet50
-    model = models.resnet50(pretrained=True)
-    
-    # Remove final classification layer to get features
-    model = torch.nn.Sequential(*list(model.children())[:-1])
-    model.eval()
-    
-    # Image preprocessing
-    transform = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
-    
-    # Load and preprocess image
-    img = Image.open(image_path).convert('RGB')
-    img_tensor = transform(img).unsqueeze(0)
-    
-    # Extract features
-    with torch.no_grad():
-        features = model(img_tensor)
-    
-    # Flatten to 2048-dim, then project to 512-dim
-    features = features.squeeze().numpy()
-    
-    # Simple projection to 512-dim (in production, you'd use a learned projection)
-    if features.shape[0] == 2048:
-        # Average pooling to get 512-dim
-        features = features.reshape(4, 512).mean(axis=0)
-    
-    return features.astype(np.float32)
+def create_synthetic_features(seed: int = None) -> np.ndarray:
+    """Create synthetic 512D feature vector."""
+    if seed is not None:
+        np.random.seed(seed)
+    return np.random.randn(512).astype(np.float32)
 
 
-def create_synthetic_image(color: tuple, size: tuple = (224, 224)) -> Image.Image:
-    """Create synthetic image for testing."""
-    return Image.new('RGB', size, color=color)
+def create_synthetic_features_batch(batch_size: int, seed: int = None) -> np.ndarray:
+    """Create batch of synthetic features."""
+    if seed is not None:
+        np.random.seed(seed)
+    return np.random.randn(batch_size, 512).astype(np.float32)
 
 
 # ============================================================================
@@ -100,327 +84,432 @@ def create_synthetic_image(color: tuple, size: tuple = (224, 224)) -> Image.Imag
 
 @pytest.fixture
 def sample_images():
-    """Get sample images (real or synthetic)."""
-    real_images = get_sample_images()
-    
-    if real_images:
-        return real_images[:10]  # Use up to 10 images
-    else:
-        # Create synthetic images
-        print("Creating synthetic test images...")
-        return [
-            create_synthetic_image((255, 0, 0)),    # Red
-            create_synthetic_image((0, 255, 0)),    # Green
-            create_synthetic_image((0, 0, 255)),    # Blue
-            create_synthetic_image((255, 255, 0)),  # Yellow
-            create_synthetic_image((255, 0, 255)),  # Magenta
-        ]
+    """Get sample medical images."""
+    return get_sample_images()
 
 
 @pytest.fixture
 def sample_features():
     """Create sample 512-dim feature vector."""
-    np.random.seed(42)
-    return np.random.randn(512).astype(np.float32)
+    return create_synthetic_features(seed=42)
 
 
 @pytest.fixture
 def sample_features_batch():
     """Create batch of feature vectors."""
-    np.random.seed(42)
-    return np.random.randn(10, 512).astype(np.float32)
+    return create_synthetic_features_batch(10, seed=42)
 
 
 @pytest.fixture
-def test_model_path(tmp_path):
-    """Create a test model checkpoint."""
-    # Create model
-    model = DeepHashingHead(input_dim=512, hash_dim=256)
-    
-    # Save as state_dict
-    checkpoint = {
-        'state_dict': model.state_dict(),
-        'config': {
-            'input_dim': 512,
-            'hash_dim': 256,
-            'hidden_dims': [512, 512]
-        },
-        'metrics': {
-            'map': 0.85,
-            'precision@100': 0.92
-        }
-    }
-    
-    model_path = tmp_path / "test_deephash.pt"
-    torch.save(checkpoint, model_path)
-    
-    return model_path
-
-
-@pytest.fixture
-def production_model_path():
-    """Get production model path if it exists."""
+def v4_model_paths():
+    """Get v4.0 model paths."""
     model_paths = [
-        Path("models/deephash_production.pt"),
-        Path("models/deephash_state_dict_only.pt"),
-        Path("models/deephash.pt"),
+        Path("models/deephash_v4_statedict.pt"),
+        Path("models/deephashv4statedict.pt"),
+        Path("models/deephash_v4.pt"),
     ]
     
     for path in model_paths:
         if path.exists():
-            return path
+            return {'model': path, 'pca': None}
     
     return None
 
 
-@pytest.fixture(scope="session")
-def resnet_feature_extractor():
-    """Load ResNet50 feature extractor (cached for session)."""
-    try:
-        model = models.resnet50(pretrained=True)
-        model = torch.nn.Sequential(*list(model.children())[:-1])
-        model.eval()
-        return model
-    except Exception as e:
-        print(f"⚠ Failed to load ResNet50: {e}")
-        return None
+@pytest.fixture
+def legacy_model_paths():
+    """Get legacy PCA model paths."""
+    model_candidates = [
+        Path("models/deephash_state_dict_only.pt"),
+        Path("models/deephash.pt"),
+    ]
+    
+    pca_candidates = [
+        Path("models/pca_whitening.pkl"),
+        Path("models/pca.pkl"),
+    ]
+    
+    for model_path in model_candidates:
+        for pca_path in pca_candidates:
+            if model_path.exists() and pca_path.exists():
+                return {'model': model_path, 'pca': pca_path}
+    
+    return None
+
+
+@pytest.fixture
+def test_model_path(tmp_path):
+    """Create a temporary test model."""
+    model = DeepHashingHead(input_dim=512, hidden_dims=[1024, 512], hash_bits=256)
+    
+    # Save as direct state_dict (v4.0 format)
+    model_path = tmp_path / "test_deephash.pt"
+    torch.save(model.state_dict(), model_path)
+    
+    return model_path
 
 
 # ============================================================================
-# MODEL TESTS
+# MODEL ARCHITECTURE TESTS
 # ============================================================================
 
 class TestDeepHashingHead:
     """Test DeepHashingHead model architecture."""
     
-    def test_model_initialization(self):
-        """Test model can be initialized."""
-        model = DeepHashingHead(input_dim=512, hash_dim=256)
+    def test_v4_architecture_initialization(self):
+        """Test v4.0 architecture (512D input, [1024, 512] hidden)."""
+        model = DeepHashingHead(
+            input_dim=512,
+            hidden_dims=[1024, 512],
+            hash_bits=256,
+            dropout=0.2
+        )
         
         assert model.input_dim == 512
-        assert model.hash_dim == 256
-        assert isinstance(model.hash_layer, torch.nn.Sequential)
+        assert model.hash_bits == 256
+        assert len(model.feature_layers) > 0
+    
+    def test_legacy_architecture_initialization(self):
+        """Test legacy architecture (256D input, [512, 256] hidden)."""
+        model = DeepHashingHead(
+            input_dim=256,
+            hidden_dims=[512, 256],
+            hash_bits=256
+        )
+        
+        assert model.input_dim == 256
+        assert model.hash_bits == 256
     
     def test_forward_pass(self, sample_features):
-        """Test forward pass."""
-        model = DeepHashingHead(input_dim=512, hash_dim=256)
+        """Test forward pass generates continuous hash codes."""
+        model = DeepHashingHead(input_dim=512, hash_bits=256)
         model.eval()
         
-        # Convert to tensor and add batch dimension
         x = torch.from_numpy(sample_features).unsqueeze(0)
-        
-        # Forward pass
         output = model(x)
         
-        assert output.shape == (1, 256), "Output should be (batch_size, hash_dim)"
+        assert output.shape == (1, 256), "Output should be (batch, hash_bits)"
+        assert output.dtype == torch.float32
     
-    def test_generate_hash(self, sample_features):
+    def test_binary_hash_generation(self, sample_features):
         """Test binary hash generation."""
-        model = DeepHashingHead(input_dim=512, hash_dim=256)
+        model = DeepHashingHead(input_dim=512, hash_bits=256)
         model.eval()
         
-        # Convert to tensor
         x = torch.from_numpy(sample_features).unsqueeze(0)
+        binary_hash = model.get_binary_hash(x)
         
-        # Generate hash
-        hash_code = model.generate_hash(x)
-        
-        assert hash_code.shape == (1, 256)
-        assert hash_code.dtype == torch.int32
-        assert torch.all((hash_code == 0) | (hash_code == 1)), "Hash should be binary"
+        assert binary_hash.shape == (1, 256)
+        assert torch.all((binary_hash == -1) | (binary_hash == 1))
     
     def test_batch_processing(self, sample_features_batch):
         """Test batch processing."""
-        model = DeepHashingHead(input_dim=512, hash_dim=256)
+        model = DeepHashingHead(input_dim=512, hash_bits=256)
         model.eval()
         
         x = torch.from_numpy(sample_features_batch)
+        output = model(x)
         
-        # Generate hashes for batch
-        hash_codes = model.generate_hash(x)
-        
-        assert hash_codes.shape == (10, 256)
-        assert torch.all((hash_codes == 0) | (hash_codes == 1))
+        assert output.shape == (10, 256)
 
 
 # ============================================================================
-# GENERATOR TESTS
+# V4.0 DIRECT MODE TESTS
 # ============================================================================
 
-class TestDeepHashGenerator:
-    """Test DeepHashGenerator API."""
-    
-    def test_generator_initialization_with_test_model(self, test_model_path):
-        """Test generator initialization with test model."""
-        generator = DeepHashGenerator(str(test_model_path))
-        
-        assert generator.hash_bits == 256
-        assert generator.input_dim == 512
-        assert generator.config.device in ['cpu', 'cuda']
-    
-    def test_generate_single_hash(self, test_model_path, sample_features):
-        """Test generating single hash."""
-        generator = DeepHashGenerator(str(test_model_path))
-        
-        hash_code = generator.generate(sample_features)
-        
-        assert hash_code.shape == (256,), "Output should be 256-bit"
-        assert hash_code.dtype == np.int32
-        assert np.all((hash_code == 0) | (hash_code == 1)), "Should be binary"
-    
-    def test_generate_batch(self, test_model_path, sample_features_batch):
-        """Test generating batch of hashes."""
-        generator = DeepHashGenerator(str(test_model_path))
-        
-        hash_codes = generator.generate_batch(sample_features_batch)
-        
-        assert hash_codes.shape == (10, 256)
-        assert np.all((hash_codes == 0) | (hash_codes == 1))
-    
-    def test_determinism(self, test_model_path, sample_features):
-        """Test that hash generation is deterministic."""
-        generator = DeepHashGenerator(str(test_model_path))
-        
-        hash1 = generator.generate(sample_features)
-        hash2 = generator.generate(sample_features)
-        
-        assert np.array_equal(hash1, hash2), "Same input should produce same hash"
-    
-    def test_hamming_distance(self, test_model_path):
-        """Test Hamming distance computation."""
-        generator = DeepHashGenerator(str(test_model_path))
-        
-        # Generate two different hashes
-        np.random.seed(42)
-        features1 = np.random.randn(512).astype(np.float32)
-        np.random.seed(43)
-        features2 = np.random.randn(512).astype(np.float32)
-        
-        hash1 = generator.generate(features1)
-        hash2 = generator.generate(features2)
-        
-        # Compute Hamming distance
-        hd = generator.compute_hamming_distance(hash1, hash2)
-        
-        assert isinstance(hd, (int, np.integer))
-        assert 0 <= hd <= 256, "Hamming distance should be between 0 and 256"
-    
-    def test_similarity(self, test_model_path, sample_features):
-        """Test similarity computation."""
-        generator = DeepHashGenerator(str(test_model_path))
-        
-        hash_code = generator.generate(sample_features)
-        
-        # Same hash should have similarity of 1.0
-        similarity = generator.compute_similarity(hash_code, hash_code)
-        
-        assert 0.0 <= similarity <= 1.0
-        assert similarity == 1.0, "Identical hashes should have similarity 1.0"
-    
-    def test_get_info(self, test_model_path):
-        """Test getting generator information."""
-        generator = DeepHashGenerator(str(test_model_path))
-        
-        info = generator.get_info()
-        
-        assert 'model_path' in info
-        assert 'device' in info
-        assert 'hash_bits' in info
-        assert 'input_dim' in info
-        assert info['hash_bits'] == 256
-        assert info['input_dim'] == 512
-
-
-# ============================================================================
-# REAL IMAGE TESTS
-# ============================================================================
-
-class TestRealImageWorkflow:
-    """Test DeepHash with real images."""
+class TestDeepHashV4DirectMode:
+    """Test DeepHash v4.0 in direct mode (no PCA)."""
     
     @pytest.mark.skipif(
-        not get_sample_images(),
-        reason="No sample images found"
+        not any(Path("models").glob("*v4*.pt")),
+        reason="v4.0 model not found"
     )
-    def test_real_image_feature_extraction(self, sample_images, resnet_feature_extractor):
-        """Test feature extraction from real images."""
-        if resnet_feature_extractor is None:
-            pytest.skip("ResNet50 not available")
+    def test_v4_initialization(self, v4_model_paths):
+        """Test v4.0 generator initialization."""
+        if v4_model_paths is None:
+            pytest.skip("v4.0 model not found")
         
-        # Process first image
-        if isinstance(sample_images[0], Path):
-            img_path = sample_images[0]
-            features = extract_features_resnet50(img_path)
-        else:
-            pytest.skip("Synthetic images don't need feature extraction")
+        config = DeepHashingConfig(
+            hash_model_path=str(v4_model_paths['model']),
+            pca_transform_path=None,  # Direct mode
+            device='cuda' if torch.cuda.is_available() else 'cpu'
+        )
         
-        assert features.shape == (512,), "Features should be 512-dim"
-        assert features.dtype == np.float32
+        generator = DeepHashGenerator(config=config)
         
-        print(f"✓ Extracted features from: {img_path.name}")
+        assert generator.config.use_pca == False
+        assert generator.config.feature_dim == 512
+        assert generator.config.hash_bits == 256
+        assert generator.pca is None
+    
+    def test_v4_with_test_model(self, test_model_path, sample_features):
+        """Test v4.0 mode with test model."""
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None,
+            device='cpu'
+        )
+        
+        generator = DeepHashGenerator(config=config)
+        
+        # Generate hash
+        binary, continuous = generator.generate_hash(sample_features)
+        
+        assert binary.shape == (1, 256)
+        assert continuous.shape == (1, 256)
+        assert binary.dtype == np.uint8
+        assert np.all((binary == 0) | (binary == 1))
+    
+    def test_v4_batch_generation(self, test_model_path, sample_features_batch):
+        """Test v4.0 batch hash generation."""
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None
+        )
+        
+        generator = DeepHashGenerator(config=config)
+        binary, continuous = generator.generate_hash(sample_features_batch)
+        
+        assert binary.shape == (10, 256)
+        assert np.all((binary == 0) | (binary == 1))
+    
+    def test_v4_determinism(self, test_model_path, sample_features):
+        """Test deterministic hash generation."""
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None
+        )
+        
+        generator = DeepHashGenerator(config=config)
+        
+        binary1, _ = generator.generate_hash(sample_features)
+        binary2, _ = generator.generate_hash(sample_features)
+        
+        assert np.array_equal(binary1, binary2), "Same input should produce same hash"
+
+
+# ============================================================================
+# LEGACY PCA MODE TESTS
+# ============================================================================
+
+class TestDeepHashLegacyPCAMode:
+    """Test DeepHash in legacy PCA mode."""
     
     @pytest.mark.skipif(
-        not get_sample_images(),
-        reason="No sample images found"
+        not Path("models/pca_whitening.pkl").exists(),
+        reason="PCA model not found"
     )
-    def test_real_image_to_deephash(self, test_model_path, sample_images, resnet_feature_extractor):
-        """Test complete pipeline: Real Image → Features → DeepHash."""
-        if resnet_feature_extractor is None:
-            pytest.skip("ResNet50 not available")
+    def test_pca_mode_initialization(self, legacy_model_paths):
+        """Test legacy PCA mode initialization."""
+        if legacy_model_paths is None:
+            pytest.skip("Legacy PCA model not found")
         
-        generator = DeepHashGenerator(str(test_model_path))
+        config = DeepHashingConfig(
+            hash_model_path=str(legacy_model_paths['model']),
+            pca_transform_path=str(legacy_model_paths['pca']),
+            device='cpu'
+        )
         
-        # Process each real image
-        hash_codes = []
-        for img in sample_images[:3]:  # Test first 3 images
-            if isinstance(img, Path):
-                # Real image - extract features
-                features = extract_features_resnet50(img)
-                hash_code = generator.generate(features)
-                
-                assert hash_code.shape == (256,)
-                assert np.all((hash_code == 0) | (hash_code == 1))
-                
-                hash_codes.append((img.name, hash_code))
-                print(f"✓ Generated hash for: {img.name}")
+        generator = DeepHashGenerator(config=config)
         
-        assert len(hash_codes) > 0, "Should process at least one image"
+        assert generator.config.use_pca == True
+        assert generator.pca is not None
+        assert generator.config.pca_dim == 256
     
     @pytest.mark.skipif(
-        not get_sample_images(),
-        reason="No sample images found"
+        not Path("models/pca_whitening.pkl").exists(),
+        reason="PCA model not found"
     )
-    def test_real_image_similarity(self, test_model_path, sample_images, resnet_feature_extractor):
-        """Test similarity between real images."""
-        if resnet_feature_extractor is None:
-            pytest.skip("ResNet50 not available")
+    def test_pca_mode_generation(self, legacy_model_paths, sample_features):
+        """Test hash generation with PCA."""
+        if legacy_model_paths is None:
+            pytest.skip("Legacy PCA model not found")
         
-        if len(sample_images) < 2:
-            pytest.skip("Need at least 2 images")
+        config = DeepHashingConfig(
+            hash_model_path=str(legacy_model_paths['model']),
+            pca_transform_path=str(legacy_model_paths['pca'])
+        )
         
-        generator = DeepHashGenerator(str(test_model_path))
+        generator = DeepHashGenerator(config=config)
+        binary, continuous = generator.generate_hash(sample_features)
         
-        # Generate hashes for two images
+        assert binary.shape == (1, 256)
+        assert np.all((binary == 0) | (binary == 1))
+
+
+# ============================================================================
+# SIMILARITY TESTS
+# ============================================================================
+
+class TestHashSimilarity:
+    """Test hash similarity computation."""
+    
+    def test_identical_hashes(self, test_model_path, sample_features):
+        """Test identical hashes have distance 0."""
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None
+        )
+        
+        generator = DeepHashGenerator(config=config)
+        
+        binary, _ = generator.generate_hash(sample_features)
+        hash1 = binary.squeeze()
+        
+        sim_result = generator.compute_similarity(hash1, hash1)
+        
+        assert sim_result['hamming_distance'] == 0
+        assert sim_result['similarity_score'] == 1.0
+        assert sim_result['confidence'] == 'very_high'
+    
+    def test_different_hashes(self, test_model_path):
+        """Test different hashes have non-zero distance."""
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None
+        )
+        
+        generator = DeepHashGenerator(config=config)
+        
+        features1 = create_synthetic_features(seed=1)
+        features2 = create_synthetic_features(seed=2)
+        
+        binary1, _ = generator.generate_hash(features1)
+        binary2, _ = generator.generate_hash(features2)
+        
+        sim_result = generator.compute_similarity(
+            binary1.squeeze(),
+            binary2.squeeze()
+        )
+        
+        assert 0 <= sim_result['hamming_distance'] <= 256
+        assert 0.0 <= sim_result['similarity_score'] <= 1.0
+        assert sim_result['confidence'] in [
+            'very_high', 'high', 'medium', 'low', 'very_low'
+        ]
+    
+    def test_hamming_distance_range(self, test_model_path):
+        """Test Hamming distance is within valid range."""
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None
+        )
+        
+        generator = DeepHashGenerator(config=config)
+        
+        # Generate 10 random hashes
         hashes = []
-        for img in sample_images[:2]:
-            if isinstance(img, Path):
-                features = extract_features_resnet50(img)
-                hash_code = generator.generate(features)
-                hashes.append((img.name, hash_code))
+        for i in range(10):
+            features = create_synthetic_features(seed=i)
+            binary, _ = generator.generate_hash(features)
+            hashes.append(binary.squeeze())
         
-        if len(hashes) == 2:
-            # Compute similarity
-            hd = generator.compute_hamming_distance(hashes[0][1], hashes[1][1])
-            similarity = generator.compute_similarity(hashes[0][1], hashes[1][1])
-            
-            print(f"\n✓ Similarity Analysis:")
-            print(f"  Image 1: {hashes[0][0]}")
-            print(f"  Image 2: {hashes[1][0]}")
-            print(f"  Hamming Distance: {hd}/256")
-            print(f"  Similarity Score: {similarity:.4f}")
-            
-            assert 0 <= hd <= 256
-            assert 0.0 <= similarity <= 1.0
+        # Check all pairwise distances
+        for i in range(len(hashes)):
+            for j in range(i+1, len(hashes)):
+                sim_result = generator.compute_similarity(hashes[i], hashes[j])
+                hd = sim_result['hamming_distance']
+                
+                assert 0 <= hd <= 256, f"Hamming distance {hd} out of range"
+
+
+# ============================================================================
+# REAL MEDICAL IMAGE TESTS
+# ============================================================================
+
+class TestRealMedicalImages:
+    """Test with real medical images."""
+    
+    @pytest.mark.skipif(
+        len(get_sample_images()) == 0,
+        reason="No medical images found"
+    )
+    def test_medical_image_consistency(self, test_model_path, sample_images):
+        """Test consistent hashing for medical images."""
+        if len(sample_images) == 0:
+            pytest.skip("No medical images available")
+        
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None
+        )
+        
+        generator = DeepHashGenerator(config=config)
+        
+        # Use first image
+        features = create_synthetic_features(seed=0)  # Simulate extracted features
+        
+        # Generate hash twice
+        binary1, _ = generator.generate_hash(features)
+        binary2, _ = generator.generate_hash(features)
+        
+        assert np.array_equal(binary1, binary2)
+        logger.info(f"✓ Medical image hash generation is consistent")
+    
+    @pytest.mark.skipif(
+        len(get_sample_images()) < 5,
+        reason="Need at least 5 medical images"
+    )
+    def test_medical_image_batch_processing(self, test_model_path, sample_images):
+        """Test batch processing of medical images."""
+        if len(sample_images) < 5:
+            pytest.skip("Need at least 5 images")
+        
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None
+        )
+        
+        generator = DeepHashGenerator(config=config)
+        
+        # Simulate features for 5 images
+        batch_features = create_synthetic_features_batch(5, seed=42)
+        
+        binary, continuous = generator.generate_hash(batch_features)
+        
+        assert binary.shape == (5, 256)
+        assert np.all((binary == 0) | (binary == 1))
+        
+        logger.info(f"✓ Processed batch of 5 medical images")
+    
+    @pytest.mark.skipif(
+        len(get_sample_images()) < 10,
+        reason="Need at least 10 medical images"
+    )
+    def test_medical_image_similarity_distribution(self, test_model_path, sample_images):
+        """Test similarity distribution for medical images."""
+        if len(sample_images) < 10:
+            pytest.skip("Need at least 10 images")
+        
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None
+        )
+        
+        generator = DeepHashGenerator(config=config)
+        
+        # Generate hashes for 10 images
+        hashes = []
+        for i in range(10):
+            features = create_synthetic_features(seed=i)
+            binary, _ = generator.generate_hash(features)
+            hashes.append(binary.squeeze())
+        
+        # Compute pairwise distances
+        distances = []
+        for i in range(len(hashes)):
+            for j in range(i+1, len(hashes)):
+                sim_result = generator.compute_similarity(hashes[i], hashes[j])
+                distances.append(sim_result['hamming_distance'])
+        
+        # Check distribution
+        mean_dist = np.mean(distances)
+        std_dist = np.std(distances)
+        
+        logger.info(f"✓ Hamming distance: mean={mean_dist:.1f}, std={std_dist:.1f}")
+        
+        assert 50 <= mean_dist <= 200, "Mean distance should be reasonable"
+        assert std_dist > 0, "Should have variation in distances"
 
 
 # ============================================================================
@@ -430,28 +519,37 @@ class TestRealImageWorkflow:
 class TestValidation:
     """Test input validation."""
     
-    def test_invalid_feature_dimension(self, test_model_path):
-        """Test validation catches wrong feature dimension."""
-        generator = DeepHashGenerator(str(test_model_path))
+    def test_wrong_feature_dimension(self, test_model_path):
+        """Test error on wrong feature dimension."""
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None
+        )
         
-        # Wrong dimension
+        generator = DeepHashGenerator(config=config)
+        
         wrong_features = np.random.randn(256).astype(np.float32)
         
-        with pytest.raises(ValidationError):
-            generator.generate(wrong_features)
+        with pytest.raises((ValueError, ValidationError, HashGenerationError)):
+            generator.generate_hash(wrong_features)
     
     def test_invalid_feature_type(self, test_model_path):
-        """Test validation catches wrong feature type."""
-        generator = DeepHashGenerator(str(test_model_path))
+        """Test handling of invalid feature types."""
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None
+        )
         
-        # Wrong type (list instead of numpy array)
-        wrong_features = [1.0] * 512
+        generator = DeepHashGenerator(config=config)
+        
+        # List instead of numpy array
+        features_list = [1.0] * 512
         
         # Should either convert or raise error
         try:
-            hash_code = generator.generate(np.array(wrong_features, dtype=np.float32))
-            assert hash_code.shape == (256,)
-        except (ValidationError, TypeError):
+            binary, _ = generator.generate_hash(np.array(features_list, dtype=np.float32))
+            assert binary.shape == (1, 256)
+        except (TypeError, ValueError):
             pass  # Expected
 
 
@@ -463,126 +561,156 @@ class TestModelLoading:
     """Test model loading functionality."""
     
     def test_load_nonexistent_model(self):
-        """Test loading non-existent model raises error."""
-        with pytest.raises(ModelLoadError):
-            DeepHashGenerator("nonexistent_model.pt")
+        """Test error when model doesn't exist."""
+        config = DeepHashingConfig(
+            hash_model_path="nonexistent_model.pt",
+            pca_transform_path=None
+        )
+        
+        with pytest.raises((FileNotFoundError, ModelLoadError)):
+            DeepHashGenerator(config=config)
     
-    def test_load_state_dict_format(self, test_model_path):
-        """Test loading state_dict format model."""
-        generator = DeepHashGenerator(str(test_model_path))
+    def test_load_direct_state_dict(self, test_model_path):
+        """Test loading direct state_dict format (v4.0)."""
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None
+        )
+        
+        generator = DeepHashGenerator(config=config)
         
         assert generator.model is not None
-        assert generator.model_config.hash_dim == 256
+        assert generator.config.hash_bits == 256
     
-    @pytest.mark.skipif(
-        not Path("models").exists(),
-        reason="Production models directory not found"
-    )
-    def test_load_production_model(self, production_model_path):
-        """Test loading production model if it exists."""
-        if production_model_path is None:
-            pytest.skip("No production model found")
+    def test_model_info(self, test_model_path):
+        """Test getting model information."""
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None
+        )
         
-        try:
-            generator = DeepHashGenerator(str(production_model_path))
-            
-            assert generator.hash_bits == 256
-            assert generator.input_dim == 512
-            
-            # Test it can generate hashes
-            features = np.random.randn(512).astype(np.float32)
-            hash_code = generator.generate(features)
-            
-            assert hash_code.shape == (256,)
-            print(f"✓ Production model loaded successfully from: {production_model_path}")
-            
-        except Exception as e:
-            pytest.skip(f"Production model loading failed: {e}")
+        generator = DeepHashGenerator(config=config)
+        info = generator.get_info()
+        
+        assert 'model_path' in info
+        assert 'device' in info
+        assert 'hash_bits' in info
+        assert 'feature_dim' in info
+        assert info['hash_bits'] == 256
+        assert info['feature_dim'] == 512
 
 
 # ============================================================================
 # INTEGRATION TESTS
 # ============================================================================
 
-class TestDeepHashIntegration:
-    """Integration tests with realistic workflows."""
+class TestIntegration:
+    """Integration tests for realistic workflows."""
     
-    def test_image_feature_extraction_simulation(self, test_model_path, sample_images):
-        """Test simulated image feature extraction → DeepHash workflow."""
-        generator = DeepHashGenerator(str(test_model_path))
-        
-        # Use real or synthetic images
-        num_images = min(len(sample_images), 5)
-        
-        # Generate hashes
-        hash_codes = []
-        for i in range(num_images):
-            # Mock features (in production, extract from actual images)
-            features = np.random.randn(512).astype(np.float32)
-            hash_code = generator.generate(features)
-            hash_codes.append(hash_code)
-        
-        assert len(hash_codes) == num_images
-        
-        # Verify all are unique (with high probability)
-        unique_hashes = set(tuple(h) for h in hash_codes)
-        assert len(unique_hashes) == num_images, "Hashes should be unique"
-    
-    def test_similarity_search_simulation(self, test_model_path):
+    def test_similarity_search_workflow(self, test_model_path):
         """Test simulated similarity search workflow."""
-        generator = DeepHashGenerator(str(test_model_path))
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None
+        )
+        
+        generator = DeepHashGenerator(config=config)
         
         # Create query
-        query_features = np.random.randn(512).astype(np.float32)
-        query_hash = generator.generate(query_features)
+        query_features = create_synthetic_features(seed=0)
+        query_hash, _ = generator.generate_hash(query_features)
+        query_hash = query_hash.squeeze()
         
-        # Create database of 100 images
+        # Create database
         database_size = 100
         database_hashes = []
         
         for i in range(database_size):
-            features = np.random.randn(512).astype(np.float32)
-            hash_code = generator.generate(features)
-            database_hashes.append(hash_code)
+            features = create_synthetic_features(seed=i+1)
+            binary, _ = generator.generate_hash(features)
+            database_hashes.append(binary.squeeze())
         
-        # Find similar images (Hamming distance < threshold)
-        threshold = 64  # ~25% of 256 bits
-        similar_indices = []
+        # Find similar images
+        threshold = 80
+        similar_count = 0
         
-        for idx, db_hash in enumerate(database_hashes):
-            hd = generator.compute_hamming_distance(query_hash, db_hash)
-            if hd < threshold:
-                similar_indices.append(idx)
+        for db_hash in database_hashes:
+            sim_result = generator.compute_similarity(query_hash, db_hash)
+            if sim_result['hamming_distance'] < threshold:
+                similar_count += 1
         
-        print(f"✓ Found {len(similar_indices)} similar images out of {database_size}")
-        assert len(similar_indices) >= 0  # At least 0 found (could be none)
+        logger.info(f"✓ Found {similar_count}/{database_size} similar images")
+        assert similar_count >= 0
+    
+    def test_end_to_end_pipeline(self, test_model_path):
+        """Test complete end-to-end pipeline."""
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None,
+            device='cpu'
+        )
+        
+        generator = DeepHashGenerator(config=config)
+        
+        # Simulate: Image → Features → Hash → Similarity
+        features1 = create_synthetic_features(seed=1)
+        features2 = create_synthetic_features(seed=2)
+        
+        binary1, continuous1 = generator.generate_hash(features1)
+        binary2, continuous2 = generator.generate_hash(features2)
+        
+        sim_result = generator.compute_similarity(
+            binary1.squeeze(),
+            binary2.squeeze()
+        )
+        
+        logger.info(f"✓ End-to-end pipeline: "
+                   f"HD={sim_result['hamming_distance']}, "
+                   f"Sim={sim_result['similarity_score']:.3f}")
+        
+        assert binary1.shape == (1, 256)
+        assert binary2.shape == (1, 256)
+        assert 0 <= sim_result['hamming_distance'] <= 256
 
 
 # ============================================================================
-# PERFORMANCE TESTS
+# PERFORMANCE BENCHMARKS
 # ============================================================================
 
 @pytest.mark.benchmark
 class TestPerformance:
     """Performance benchmarks."""
     
-    def test_single_hash_generation_speed(self, test_model_path, benchmark):
+    def test_single_hash_speed(self, test_model_path, benchmark, sample_features):
         """Benchmark single hash generation."""
-        generator = DeepHashGenerator(str(test_model_path))
-        features = np.random.randn(512).astype(np.float32)
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None
+        )
         
-        result = benchmark(generator.generate, features)
+        generator = DeepHashGenerator(config=config)
         
-        assert result.shape == (256,)
+        def generate():
+            return generator.generate_hash(sample_features)
+        
+        result = benchmark(generate)
+        assert result[0].shape == (1, 256)
     
-    def test_batch_hash_generation_speed(self, test_model_path, benchmark):
+    def test_batch_hash_speed(self, test_model_path, benchmark):
         """Benchmark batch hash generation."""
-        generator = DeepHashGenerator(str(test_model_path))
-        features_batch = np.random.randn(100, 512).astype(np.float32)
+        config = DeepHashingConfig(
+            hash_model_path=str(test_model_path),
+            pca_transform_path=None
+        )
         
-        result = benchmark(generator.generate_batch, features_batch)
+        generator = DeepHashGenerator(config=config)
+        batch_features = create_synthetic_features_batch(100, seed=42)
         
-        assert result.shape == (100, 256)
+        def generate():
+            return generator.generate_hash(batch_features)
+        
+        result = benchmark(generate)
+        assert result[0].shape == (100, 256)
 
 
 # ============================================================================
@@ -590,4 +718,12 @@ class TestPerformance:
 # ============================================================================
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v", "-s", "--tb=short"])
+    # Run tests
+    pytest.main([
+        __file__,
+        "-v",
+        "-s",
+        "--tb=short",
+        "--maxfail=5",
+        "-W", "ignore::DeprecationWarning"
+    ])

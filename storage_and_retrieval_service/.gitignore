@@ -16,7 +16,10 @@ search_server.env
 bfv_secret_context*.txt
 bfv_secret_context.bin
 secret/
-
+models/
+retrieved_images/
+query_images/
+sample_images/
 
 # Python
 __pycache__/
@@ -31,3 +34,4 @@ storage_and_retrieval_service/venv/
 # OS
 .DS_Store
 Thumbs.db
+

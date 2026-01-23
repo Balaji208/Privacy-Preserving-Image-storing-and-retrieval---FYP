@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Union, List, Optional
 import logging
 from PIL import Image
+
 from .core.loader import ModelLoader
 from .core.config import ExtractorConfig
 from .preprocessing.transforms import ImageTransforms
@@ -19,16 +20,15 @@ logger = logging.getLogger(__name__)
 class ConvNeXtFeatureExtractor:
     """
     ConvNeXt-V2 feature extractor.
-    
     Extracts 512-D L2-normalized features from images.
     
     Args:
-        model_path: Path to model checkpoint
+        model_path: Path to model checkpoint (supports convnextv2_best_phase1.pt)
         device: Device ('cuda' or 'cpu'). Auto-detects if None
         batch_size: Batch size for processing (default: 32)
-        
+    
     Example:
-        >>> extractor = ConvNeXtFeatureExtractor('models/convnext.pt')
+        >>> extractor = ConvNeXtFeatureExtractor('models/convnextv2_best_phase1.pt')
         >>> features = extractor.extract('image.jpg')
         >>> print(features.shape)  # (512,)
     """
@@ -52,6 +52,7 @@ class ConvNeXtFeatureExtractor:
             self.model_path,
             self.config.device
         )
+        
         self.model.eval()
         self.model.to(self.config.device)
         
@@ -73,6 +74,8 @@ class ConvNeXtFeatureExtractor:
         """Log model information"""
         logger.info(f"✓ Model loaded on {self.config.device}")
         logger.info(f"✓ Feature dimension: {self.feature_dim}")
+        logger.info(f"✓ Model type: ConvNeXt-V2 {self.model_config.model_size}")
+        logger.info(f"✓ Batch size: {self.config.batch_size}")
     
     @torch.no_grad()
     def extract(
@@ -86,7 +89,7 @@ class ConvNeXtFeatureExtractor:
         Args:
             image: Input image (path, PIL Image, or numpy array)
             normalize: Apply L2 normalization (default: True)
-            
+        
         Returns:
             Feature vector of shape (512,)
         """
@@ -103,7 +106,7 @@ class ConvNeXtFeatureExtractor:
                 features = F.normalize(features, p=2, dim=1)
             
             return features.cpu().numpy()[0]
-            
+        
         except Exception as e:
             raise FeatureExtractionError(
                 f"Failed to extract features: {e}"
@@ -123,7 +126,7 @@ class ConvNeXtFeatureExtractor:
             images: List of images
             normalize: Apply L2 normalization (default: True)
             show_progress: Show progress bar (default: False)
-            
+        
         Returns:
             Feature matrix of shape (num_images, 512)
         """
@@ -170,5 +173,6 @@ class ConvNeXtFeatureExtractor:
             'feature_dim': self.feature_dim,
             'batch_size': self.config.batch_size,
             'model_type': 'ConvNeXt-V2',
-            'model_size': self.model_config.model_size
+            'model_size': self.model_config.model_size,
+            'num_classes': self.model_config.num_classes
         }

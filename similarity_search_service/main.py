@@ -1,28 +1,59 @@
-"""
-Application Entry Point
-=======================
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+from api.routes import router, initialize_services
+from utils.logger import get_logger
 
-Runs the FastAPI server with Uvicorn.
-"""
-
-import uvicorn
-from config.settings import get_settings
+logger = get_logger(__name__)
 
 
-def main():
-    """Run the application server."""
-    settings = get_settings()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan event handler for startup and shutdown."""
+    # Startup
+    logger.info("=" * 80)
+    logger.info("SIMILARITY SEARCH SERVICE STARTING")
+    logger.info("=" * 80)
     
-    uvicorn.run(
-        "api.server:app",
-        host=settings.api_host,
-        port=settings.api_port,
-        workers=settings.api_workers,
-        timeout_keep_alive=settings.api_timeout,
-        log_level=settings.log_level.lower(),
-        access_log=True
-    )
+    try:
+        initialize_services()
+    except Exception as e:
+        logger.error(f"Failed to initialize services: {e}")
+        raise
+    
+    yield
+    
+    # Shutdown
+    logger.info("Similarity search service shutting down...")
+
+
+app = FastAPI(
+    title="Similarity Search Service",
+    description="Encrypted similarity search using BFV homomorphic encryption",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include API routes
+app.include_router(router)
 
 
 if __name__ == "__main__":
-    main()
+    import uvicorn
+    
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info"
+    )
