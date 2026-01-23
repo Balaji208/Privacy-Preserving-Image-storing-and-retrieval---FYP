@@ -35,3 +35,4 @@ storage_and_retrieval_service/venv/
 .DS_Store
 Thumbs.db
 
+/venv
