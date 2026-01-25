@@ -1,0 +1,78 @@
+{
+  "query_id": "tmpvvvvgga4_20260125_123927",
+  "timestamp": "2026-01-25T12:40:09.834552",
+  "total_images": 10,
+  "output_directory": "C:\\CEG\\FYP\\code\\storage_and_retrieval_service\\temp_search_results\\tmpvvvvgga4_20260125_123927",
+  "files": [
+    {
+      "rank": 1,
+      "image_id": "Moderate Impairment_86_1769168794047",
+      "file_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\Moderate Impairment_86_1769168794047.jpg",
+      "metadata_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\rank01_Moderate Impairment_86_1769168794047_metadata.json",
+      "size_bytes": 6255
+    },
+    {
+      "rank": 2,
+      "image_id": "Moderate Impairment_505_1769168332839",
+      "file_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\Moderate Impairment_505_1769168332839.jpg",
+      "metadata_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\rank02_Moderate Impairment_505_1769168332839_metadata.json",
+      "size_bytes": 6557
+    },
+    {
+      "rank": 3,
+      "image_id": "Moderate Impairment_353_1769168140128",
+      "file_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\Moderate Impairment_353_1769168140128.jpg",
+      "metadata_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\rank03_Moderate Impairment_353_1769168140128_metadata.json",
+      "size_bytes": 6744
+    },
+    {
+      "rank": 4,
+      "image_id": "Moderate Impairment_857_1769168790626",
+      "file_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\Moderate Impairment_857_1769168790626.jpg",
+      "metadata_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\rank04_Moderate Impairment_857_1769168790626_metadata.json",
+      "size_bytes": 6106
+    },
+    {
+      "rank": 5,
+      "image_id": "Moderate Impairment_1876_1769167186574",
+      "file_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\Moderate Impairment_1876_1769167186574.jpg",
+      "metadata_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\rank05_Moderate Impairment_1876_1769167186574_metadata.json",
+      "size_bytes": 6157
+    },
+    {
+      "rank": 6,
+      "image_id": "Moderate Impairment_2174_1769167565483",
+      "file_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\Moderate Impairment_2174_1769167565483.jpg",
+      "metadata_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\rank06_Moderate Impairment_2174_1769167565483_metadata.json",
+      "size_bytes": 6039
+    },
+    {
+      "rank": 7,
+      "image_id": "Moderate Impairment_2268_1769167672328",
+      "file_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\Moderate Impairment_2268_1769167672328.jpg",
+      "metadata_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\rank07_Moderate Impairment_2268_1769167672328_metadata.json",
+      "size_bytes": 6625
+    },
+    {
+      "rank": 8,
+      "image_id": "Mild Impairment_1975_1769164068045",
+      "file_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\Mild Impairment_1975_1769164068045.jpg",
+      "metadata_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\rank08_Mild Impairment_1975_1769164068045_metadata.json",
+      "size_bytes": 6706
+    },
+    {
+      "rank": 9,
+      "image_id": "Moderate Impairment_134_1769166531303",
+      "file_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\Moderate Impairment_134_1769166531303.jpg",
+      "metadata_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\rank09_Moderate Impairment_134_1769166531303_metadata.json",
+      "size_bytes": 6622
+    },
+    {
+      "rank": 10,
+      "image_id": "Moderate Impairment_1097_1769166246428",
+      "file_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\Moderate Impairment_1097_1769166246428.jpg",
+      "metadata_path": "temp_search_results\\tmpvvvvgga4_20260125_123927\\rank10_Moderate Impairment_1097_1769166246428_metadata.json",
+      "size_bytes": 6688
+    }
+  ]
+}

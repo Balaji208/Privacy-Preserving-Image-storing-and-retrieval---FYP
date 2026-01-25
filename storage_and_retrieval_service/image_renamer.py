@@ -1,6 +1,6 @@
 import os
 
-folder_path = "../../datasets/Lung/Normal cases"   # ← change this
+folder_path = "../../datasets/Renal Malignancy_extra/Kidney-Tumor"   # ← change this
 folder_name = os.path.basename(folder_path.rstrip(os.sep))
 
 for idx, filename in enumerate(os.listdir(folder_path), start=1):

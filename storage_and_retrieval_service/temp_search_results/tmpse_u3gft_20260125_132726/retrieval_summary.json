@@ -1,0 +1,43 @@
+{
+  "query_id": "tmpse_u3gft_20260125_132726",
+  "timestamp": "2026-01-25T13:27:59.039464",
+  "total_images": 5,
+  "output_directory": "C:\\CEG\\FYP\\code\\storage_and_retrieval_service\\temp_search_results\\tmpse_u3gft_20260125_132726",
+  "files": [
+    {
+      "rank": 1,
+      "image_id": "Very Mild Impairment_2733_1769185246154",
+      "file_path": "temp_search_results\\tmpse_u3gft_20260125_132726\\Very Mild Impairment_2733_1769185246154.jpg",
+      "metadata_path": "temp_search_results\\tmpse_u3gft_20260125_132726\\rank01_Very Mild Impairment_2733_1769185246154_metadata.json",
+      "size_bytes": 6509
+    },
+    {
+      "rank": 2,
+      "image_id": "Very Mild Impairment_2160_1769184294052",
+      "file_path": "temp_search_results\\tmpse_u3gft_20260125_132726\\Very Mild Impairment_2160_1769184294052.jpg",
+      "metadata_path": "temp_search_results\\tmpse_u3gft_20260125_132726\\rank02_Very Mild Impairment_2160_1769184294052_metadata.json",
+      "size_bytes": 6383
+    },
+    {
+      "rank": 3,
+      "image_id": "Mild Impairment_1575_1769163479747",
+      "file_path": "temp_search_results\\tmpse_u3gft_20260125_132726\\Mild Impairment_1575_1769163479747.jpg",
+      "metadata_path": "temp_search_results\\tmpse_u3gft_20260125_132726\\rank03_Mild Impairment_1575_1769163479747_metadata.json",
+      "size_bytes": 6352
+    },
+    {
+      "rank": 4,
+      "image_id": "Very Mild Impairment_2541_1769184924551",
+      "file_path": "temp_search_results\\tmpse_u3gft_20260125_132726\\Very Mild Impairment_2541_1769184924551.jpg",
+      "metadata_path": "temp_search_results\\tmpse_u3gft_20260125_132726\\rank04_Very Mild Impairment_2541_1769184924551_metadata.json",
+      "size_bytes": 6498
+    },
+    {
+      "rank": 5,
+      "image_id": "Mild Impairment_817_1769165920416",
+      "file_path": "temp_search_results\\tmpse_u3gft_20260125_132726\\Mild Impairment_817_1769165920416.jpg",
+      "metadata_path": "temp_search_results\\tmpse_u3gft_20260125_132726\\rank05_Mild Impairment_817_1769165920416_metadata.json",
+      "size_bytes": 6462
+    }
+  ]
+}

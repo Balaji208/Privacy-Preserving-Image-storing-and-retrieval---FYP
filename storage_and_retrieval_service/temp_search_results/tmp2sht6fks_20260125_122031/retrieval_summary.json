@@ -1,0 +1,43 @@
+{
+  "query_id": "tmp2sht6fks_20260125_122031",
+  "timestamp": "2026-01-25T12:21:07.612110",
+  "total_images": 5,
+  "output_directory": "C:\\CEG\\FYP\\code\\storage_and_retrieval_service\\temp_search_results\\tmp2sht6fks_20260125_122031",
+  "files": [
+    {
+      "rank": 1,
+      "image_id": "PNEUMONIA_621_1769181802432",
+      "file_path": "temp_search_results\\tmp2sht6fks_20260125_122031\\PNEUMONIA_621_1769181802432.jpg",
+      "metadata_path": "temp_search_results\\tmp2sht6fks_20260125_122031\\rank01_PNEUMONIA_621_1769181802432_metadata.json",
+      "size_bytes": 28781
+    },
+    {
+      "rank": 2,
+      "image_id": "PNEUMONIA_3169_1769179701691",
+      "file_path": "temp_search_results\\tmp2sht6fks_20260125_122031\\PNEUMONIA_3169_1769179701691.jpg",
+      "metadata_path": "temp_search_results\\tmp2sht6fks_20260125_122031\\rank02_PNEUMONIA_3169_1769179701691_metadata.json",
+      "size_bytes": 78850
+    },
+    {
+      "rank": 3,
+      "image_id": "PNEUMONIA_3274_1769179873882",
+      "file_path": "temp_search_results\\tmp2sht6fks_20260125_122031\\PNEUMONIA_3274_1769179873882.jpg",
+      "metadata_path": "temp_search_results\\tmp2sht6fks_20260125_122031\\rank03_PNEUMONIA_3274_1769179873882_metadata.json",
+      "size_bytes": 45864
+    },
+    {
+      "rank": 4,
+      "image_id": "PNEUMONIA_969_1769182395680",
+      "file_path": "temp_search_results\\tmp2sht6fks_20260125_122031\\PNEUMONIA_969_1769182395680.jpg",
+      "metadata_path": "temp_search_results\\tmp2sht6fks_20260125_122031\\rank04_PNEUMONIA_969_1769182395680_metadata.json",
+      "size_bytes": 184569
+    },
+    {
+      "rank": 5,
+      "image_id": "PNEUMONIA_2333_1769178426618",
+      "file_path": "temp_search_results\\tmp2sht6fks_20260125_122031\\PNEUMONIA_2333_1769178426618.jpg",
+      "metadata_path": "temp_search_results\\tmp2sht6fks_20260125_122031\\rank05_PNEUMONIA_2333_1769178426618_metadata.json",
+      "size_bytes": 59373
+    }
+  ]
+}

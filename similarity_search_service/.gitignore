@@ -1,41 +1,82 @@
-.env/
-venv/
-bfv_keys/
-# Ignore trained model weights
-models/
-*.pt
-*.pth
-*.ckpt
-test_azure_pipeline.py 
-.env
-# TenSEAL FHE Keys - NEVER COMMIT TO GIT!
-tenseal_keys.env
-tenseal_keys.json
-tenseal_full_context.bin
-tenseal_secret_key.bin
-tenseal_*.bin
-*.env
-search_server.env
-bfv_secret_context*.txt
-bfv_secret_context.bin
-secret/
-models/
-retrieved_images/
-query_images/
-sample_images/
-
+# =========================
 # Python
+# =========================
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
 
-# Virtual environments
+# Virtual environment
 venv/
 .env/
-.envs/
-storage_and_retrieval_service/venv/
+.env.*
+.venv/
 
-# OS
+# =========================
+# Secrets & Config
+# =========================
+.env
+config/*.yaml
+config/*.yml
+config/*.json
+!config/example.*
+
+# =========================
+# FHE / Cryptographic Keys (VERY IMPORTANT)
+# =========================
+bfv_keys/
+fhe/keys/
+fhe/**/*.key
+fhe/**/*.bin
+fhe/**/*.ckks
+fhe/**/*.bfv
+
+# =========================
+# Redis / Storage / Data
+# =========================
+storage/
+redis_service/data/
+*.rdb
+*.aof
+
+# =========================
+# Logs & Runtime Artifacts
+# =========================
+logs/
+*.log
+*.pid
+
+# =========================
+# Large Files / Generated Data
+# =========================
+sample_request_body.json
+*.zip
+*.tar
+*.tar.gz
+*.7z
+
+# =========================
+# IDE / OS
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
 .DS_Store
 Thumbs.db
 
-/venv
+# =========================
+# Testing / Coverage
+# =========================
+.pytest_cache/
+.coverage
+htmlcov/
+
+# =========================
+# Build / Distribution
+# =========================
+build/
+dist/

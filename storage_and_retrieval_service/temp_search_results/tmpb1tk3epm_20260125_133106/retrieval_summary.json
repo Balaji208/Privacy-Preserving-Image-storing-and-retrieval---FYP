@@ -1,0 +1,50 @@
+{
+  "query_id": "tmpb1tk3epm_20260125_133106",
+  "timestamp": "2026-01-25T13:31:38.867378",
+  "total_images": 6,
+  "output_directory": "C:\\CEG\\FYP\\code\\storage_and_retrieval_service\\temp_search_results\\tmpb1tk3epm_20260125_133106",
+  "files": [
+    {
+      "rank": 1,
+      "image_id": "Mild Impairment_1575_1769163479747",
+      "file_path": "temp_search_results\\tmpb1tk3epm_20260125_133106\\Mild Impairment_1575_1769163479747.jpg",
+      "metadata_path": "temp_search_results\\tmpb1tk3epm_20260125_133106\\rank01_Mild Impairment_1575_1769163479747_metadata.json",
+      "size_bytes": 6352
+    },
+    {
+      "rank": 2,
+      "image_id": "Very Mild Impairment_980_1769186714940",
+      "file_path": "temp_search_results\\tmpb1tk3epm_20260125_133106\\Very Mild Impairment_980_1769186714940.jpg",
+      "metadata_path": "temp_search_results\\tmpb1tk3epm_20260125_133106\\rank02_Very Mild Impairment_980_1769186714940_metadata.json",
+      "size_bytes": 5759
+    },
+    {
+      "rank": 3,
+      "image_id": "PNEUMONIA_1900_1769177721589",
+      "file_path": "temp_search_results\\tmpb1tk3epm_20260125_133106\\PNEUMONIA_1900_1769177721589.jpg",
+      "metadata_path": "temp_search_results\\tmpb1tk3epm_20260125_133106\\rank03_PNEUMONIA_1900_1769177721589_metadata.json",
+      "size_bytes": 69740
+    },
+    {
+      "rank": 4,
+      "image_id": "Mild Impairment_713_1769165800641",
+      "file_path": "temp_search_results\\tmpb1tk3epm_20260125_133106\\Mild Impairment_713_1769165800641.jpg",
+      "metadata_path": "temp_search_results\\tmpb1tk3epm_20260125_133106\\rank04_Mild Impairment_713_1769165800641_metadata.json",
+      "size_bytes": 6584
+    },
+    {
+      "rank": 5,
+      "image_id": "Very Mild Impairment_1404_1769183089471",
+      "file_path": "temp_search_results\\tmpb1tk3epm_20260125_133106\\Very Mild Impairment_1404_1769183089471.jpg",
+      "metadata_path": "temp_search_results\\tmpb1tk3epm_20260125_133106\\rank05_Very Mild Impairment_1404_1769183089471_metadata.json",
+      "size_bytes": 6165
+    },
+    {
+      "rank": 6,
+      "image_id": "No Impairment_1084_1769169096468",
+      "file_path": "temp_search_results\\tmpb1tk3epm_20260125_133106\\No Impairment_1084_1769169096468.jpg",
+      "metadata_path": "temp_search_results\\tmpb1tk3epm_20260125_133106\\rank06_No Impairment_1084_1769169096468_metadata.json",
+      "size_bytes": 6482
+    }
+  ]
+}

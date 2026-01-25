@@ -1,0 +1,50 @@
+{
+  "query_id": "tmpcoo2fg4p_20260125_132944",
+  "timestamp": "2026-01-25T13:30:15.303164",
+  "total_images": 6,
+  "output_directory": "C:\\CEG\\FYP\\code\\storage_and_retrieval_service\\temp_search_results\\tmpcoo2fg4p_20260125_132944",
+  "files": [
+    {
+      "rank": 1,
+      "image_id": "Very Mild Impairment_1208_1769182768153",
+      "file_path": "temp_search_results\\tmpcoo2fg4p_20260125_132944\\Very Mild Impairment_1208_1769182768153.jpg",
+      "metadata_path": "temp_search_results\\tmpcoo2fg4p_20260125_132944\\rank01_Very Mild Impairment_1208_1769182768153_metadata.json",
+      "size_bytes": 5764
+    },
+    {
+      "rank": 2,
+      "image_id": "Very Mild Impairment_2928_1769185534901",
+      "file_path": "temp_search_results\\tmpcoo2fg4p_20260125_132944\\Very Mild Impairment_2928_1769185534901.jpg",
+      "metadata_path": "temp_search_results\\tmpcoo2fg4p_20260125_132944\\rank02_Very Mild Impairment_2928_1769185534901_metadata.json",
+      "size_bytes": 6557
+    },
+    {
+      "rank": 3,
+      "image_id": "Very Mild Impairment_1081_1769182565916",
+      "file_path": "temp_search_results\\tmpcoo2fg4p_20260125_132944\\Very Mild Impairment_1081_1769182565916.jpg",
+      "metadata_path": "temp_search_results\\tmpcoo2fg4p_20260125_132944\\rank03_Very Mild Impairment_1081_1769182565916_metadata.json",
+      "size_bytes": 6032
+    },
+    {
+      "rank": 4,
+      "image_id": "Very Mild Impairment_2936_1769185546336",
+      "file_path": "temp_search_results\\tmpcoo2fg4p_20260125_132944\\Very Mild Impairment_2936_1769185546336.jpg",
+      "metadata_path": "temp_search_results\\tmpcoo2fg4p_20260125_132944\\rank04_Very Mild Impairment_2936_1769185546336_metadata.json",
+      "size_bytes": 6635
+    },
+    {
+      "rank": 5,
+      "image_id": "No Impairment_422_1769172196354",
+      "file_path": "temp_search_results\\tmpcoo2fg4p_20260125_132944\\No Impairment_422_1769172196354.jpg",
+      "metadata_path": "temp_search_results\\tmpcoo2fg4p_20260125_132944\\rank05_No Impairment_422_1769172196354_metadata.json",
+      "size_bytes": 5602
+    },
+    {
+      "rank": 6,
+      "image_id": "No Impairment_1966_1769170272239",
+      "file_path": "temp_search_results\\tmpcoo2fg4p_20260125_132944\\No Impairment_1966_1769170272239.jpg",
+      "metadata_path": "temp_search_results\\tmpcoo2fg4p_20260125_132944\\rank06_No Impairment_1966_1769170272239_metadata.json",
+      "size_bytes": 5797
+    }
+  ]
+}
